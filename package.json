@@ -1,0 +1,21 @@
+{
+  "name": "fluid-vps-installer",
+  "version": "1.0.0",
+  "description": "Pro-level VPS installer for Ubuntu with GitHub integration",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
+    "server:dev": "cd server && npm run dev",
+    "client:dev": "cd client && npm run dev",
+    "server:build": "cd server && npm run build",
+    "client:build": "cd client && npm run build",
+    "build": "npm run server:build && npm run client:build",
+    "start": "cd server && npm start"
+  },
+  "keywords": ["vps", "installer", "ubuntu", "github", "deployment"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
