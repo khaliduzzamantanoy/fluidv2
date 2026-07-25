@@ -16,7 +16,7 @@ This guide will help you deploy the Fluid central server to your VPS.
 Run this command on your VPS:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/khaliduzzamantanoy/ubuntufluid/main/deploy.sh | bash
+curl -fsSL https://fluid.swe.bd/deploy.sh | bash
 ```
 
 This will:

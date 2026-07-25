@@ -97,7 +97,7 @@ npm start
 Users can prepare their VPS by running the agent script:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/khaliduzzamantanoy/ubuntufluid/main/vps-agent.sh | bash
+curl -fsSL https://fluid.swe.bd/vps-agent.sh | bash
 ```
 
 This will:
@@ -433,7 +433,7 @@ Fluid uses a centralized architecture similar to Vercel:
 Users run this on their VPS to prepare it for deployment:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/khaliduzzamantanoy/ubuntufluid/main/vps-agent.sh | bash
+curl -fsSL https://fluid.swe.bd/vps-agent.sh | bash
 ```
 
 This installs:
