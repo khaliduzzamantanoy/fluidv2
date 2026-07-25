@@ -41,6 +41,7 @@ async function detectServerIP() {
     return publicIP;
   } catch (error) {
     console.error('Failed to detect server IP:', error.message);
+    console.log('Using SERVER_URL from environment for production');
     return null;
   }
 }

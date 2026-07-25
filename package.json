@@ -9,8 +9,9 @@
     "client:dev": "cd client && npm run dev",
     "server:build": "cd server && npm run build",
     "client:build": "cd client && npm run build",
-    "build": "npm run server:build && npm run client:build",
-    "start": "cd server && npm start"
+    "build": "npm run client:build",
+    "start": "cd server && npm start",
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install"
   },
   "keywords": ["vps", "installer", "ubuntu", "github", "deployment"],
   "author": "",

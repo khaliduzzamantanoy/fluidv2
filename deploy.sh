@@ -104,7 +104,7 @@ install_node_dependencies() {
 build_frontend() {
     log "Building frontend..."
     
-    cd /opt/fluid/client
+    cd /opt/fluid
     npm run build >> /tmp/fluid-deploy.log 2>&1
     
     log_success "Frontend built"
