@@ -115,9 +115,9 @@ setup_environment() {
     log "Setting up environment..."
     
     if [ ! -f "/opt/fluid/server/.env" ]; then
-        log_warning ".env file not found. Please create it manually."
-        log_warning "Copy .env.example to .env and add your GitHub OAuth credentials."
-        exit 1
+        log_warning ".env file not found. Creating with defaults..."
+        cp /opt/fluid/server/.env.example /opt/fluid/server/.env
+        log_success ".env file created with default values"
     fi
     
     log_success "Environment setup complete"

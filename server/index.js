@@ -34,8 +34,8 @@ async function detectServerIP() {
       console.log(`Auto-detected server IP: ${publicIP}`);
     }
     
-    // Update GitHub callback URL if using localhost
-    if (process.env.GITHUB_CALLBACK_URL === 'http://localhost:3000' && publicIP) {
+    // Update GitHub callback URL if using localhost and OAuth is configured
+    if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CALLBACK_URL === 'http://localhost:3000' && publicIP) {
       process.env.GITHUB_CALLBACK_URL = `http://${publicIP}:3000`;
       console.log(`Updated GitHub callback URL: ${process.env.GITHUB_CALLBACK_URL}`);
     }
