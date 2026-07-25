@@ -40,6 +40,12 @@ async function detectServerIP() {
       console.log(`Updated GitHub callback URL: ${process.env.GITHUB_CALLBACK_URL}`);
     }
     
+    // Update SERVER_URL if not set
+    if (!process.env.SERVER_URL && publicIP) {
+      process.env.SERVER_URL = `http://${publicIP}:3000`;
+      console.log(`Updated SERVER_URL: ${process.env.SERVER_URL}`);
+    }
+    
     return publicIP;
   } catch (error) {
     console.error('Failed to detect server IP:', error.message);
