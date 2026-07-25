@@ -58,9 +58,15 @@ export default function BuildStep({ data, onUpdate, onNext, onPrev, socket, sess
       // Step 2: Clone Repository on VPS
       setCurrentStep('clone');
       setProgress(20);
+      
+      // Use SSH if GitHub device auth is configured, otherwise use HTTPS with token
+      const gitUrl = data.vpsPublicKey 
+        ? `git@github.com:${data.repo.full_name}.git`
+        : `https://${data.githubToken}@github.com/${data.repo.full_name}.git`;
+      
       await axios.post('/api/vps/execute', {
         ...data.vpsConfig,
-        command: `git clone ${data.repo.clone_url} ${data.projectDir}`,
+        command: `git clone ${gitUrl} ${data.projectDir}`,
         sessionId
       });
 

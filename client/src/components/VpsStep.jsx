@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Server, Lock, Key, CheckCircle, AlertCircle, Loader2, Globe } from 'lucide-react';
+import { Server, Lock, Key, CheckCircle, AlertCircle, Loader2, Globe, Github } from 'lucide-react';
 import axios from 'axios';
 
 export default function VpsStep({ data, onUpdate, onNext, onPrev }) {
@@ -15,6 +15,8 @@ export default function VpsStep({ data, onUpdate, onNext, onPrev }) {
   const [connectionStatus, setConnectionStatus] = useState(null);
   const [vpsInfo, setVpsInfo] = useState(null);
   const [sshKeys, setSshKeys] = useState(null);
+  const [githubAuthSetup, setGithubAuthSetup] = useState(false);
+  const [vpsPublicKey, setVpsPublicKey] = useState(null);
 
   const testConnection = async () => {
     setTesting(true);
@@ -54,6 +56,24 @@ export default function VpsStep({ data, onUpdate, onNext, onPrev }) {
     }
     
     setTesting(false);
+  };
+
+  const setupGitHubDeviceAuth = async () => {
+    try {
+      const response = await axios.post('/api/vps/setup-github-auth', {
+        ...vpsConfig,
+        githubToken: data.githubToken,
+        gitEmail: data.githubUser?.email || 'user@example.com',
+        gitUsername: data.githubUser?.login || 'user'
+      });
+      
+      setVpsPublicKey(response.data.publicKey);
+      setGithubAuthSetup(true);
+      
+      onUpdate('vpsPublicKey', response.data.publicKey);
+    } catch (error) {
+      console.error('GitHub auth setup failed:', error);
+    }
   };
 
   const handleNext = () => {
@@ -241,6 +261,44 @@ export default function VpsStep({ data, onUpdate, onNext, onPrev }) {
           <h4 className="font-medium text-blue-400 mb-2">SSH Keys Generated</h4>
           <p className="text-sm text-gray-400">
             We've generated SSH keys for secure VPS access. These will be used for Git operations and secure deployments.
+          </p>
+        </div>
+      )}
+
+      {/* GitHub Device Auth Setup */}
+      {connectionStatus?.success && !githubAuthSetup && (
+        <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4">
+          <h4 className="font-medium text-purple-400 mb-2 flex items-center gap-2">
+            <Github className="w-4 h-4" />
+            GitHub Device Authentication
+          </h4>
+          <p className="text-sm text-gray-400 mb-3">
+            Setup your VPS to authenticate directly with GitHub for secure Git operations. This is more secure than using tokens.
+          </p>
+          <button
+            onClick={setupGitHubDeviceAuth}
+            className="btn-secondary text-sm"
+          >
+            Setup GitHub Device Auth
+          </button>
+        </div>
+      )}
+
+      {/* GitHub Auth Success */}
+      {githubAuthSetup && vpsPublicKey && (
+        <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+          <h4 className="font-medium text-green-400 mb-2 flex items-center gap-2">
+            <CheckCircle className="w-4 h-4" />
+            GitHub Device Auth Configured
+          </h4>
+          <p className="text-sm text-gray-400 mb-2">
+            Your VPS is now configured to authenticate directly with GitHub via SSH.
+          </p>
+          <div className="bg-gray-900 rounded p-2 text-xs font-mono break-all">
+            {vpsPublicKey}
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            Add this SSH key to your GitHub repository's deploy keys for secure access.
           </p>
         </div>
       )}

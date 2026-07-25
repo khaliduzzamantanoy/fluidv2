@@ -10,6 +10,11 @@ const {
   setupVPS,
   disconnectVPS
 } = require('../services/vpsService');
+const {
+  setupGitHubDeviceAuth,
+  configureGitSSH,
+  testGitHubSSH
+} = require('../services/githubDeviceAuth');
 
 // Generate SSH key pair for VPS connection
 router.post('/generate-keys', async (req, res) => {
@@ -159,6 +164,66 @@ router.post('/execute', async (req, res) => {
     } else {
       result = await executeCommand(ssh, command);
     }
+    
+    disconnectVPS(ssh);
+
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Setup GitHub device authentication on VPS
+router.post('/setup-github-auth', async (req, res) => {
+  try {
+    const { host, username, password, privateKey, port, githubToken, gitEmail, gitUsername } = req.body;
+    
+    const ssh = await connectToVPS({
+      host,
+      username,
+      password,
+      privateKey,
+      port: port || 22
+    });
+
+    // Setup GitHub device auth on VPS
+    const authResult = await setupGitHubDeviceAuth(ssh, githubToken, username);
+    
+    if (!authResult.success) {
+      disconnectVPS(ssh);
+      return res.status(500).json(authResult);
+    }
+
+    // Configure git on VPS
+    const gitResult = await configureGitSSH(ssh, gitEmail, gitUsername);
+    
+    disconnectVPS(ssh);
+
+    res.json({
+      success: true,
+      publicKey: authResult.publicKey,
+      gitConfigured: gitResult.success,
+      message: 'GitHub device authentication setup complete'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Test GitHub SSH connection from VPS
+router.post('/test-github-ssh', async (req, res) => {
+  try {
+    const { host, username, password, privateKey, port } = req.body;
+    
+    const ssh = await connectToVPS({
+      host,
+      username,
+      password,
+      privateKey,
+      port: port || 22
+    });
+
+    const result = await testGitHubSSH(ssh);
     
     disconnectVPS(ssh);
 
