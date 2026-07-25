@@ -11,6 +11,9 @@
     "client:build": "cd client && npm run build",
     "build": "npm run client:build",
     "start": "cd server && npm start",
+    "start:frontend": "cd client && node server.js",
+    "start:backend": "cd server && npm start",
+    "start:all": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
     "install:all": "npm install && cd server && npm install && cd ../client && npm install"
   },
   "keywords": ["vps", "installer", "ubuntu", "github", "deployment"],

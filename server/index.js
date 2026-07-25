@@ -20,6 +20,8 @@ const vpsRoutes = require('./routes/vps');
 
 dotenv.config();
 
+const PORT = process.env.BACKEND_PORT || process.env.PORT || 3000;
+
 // Auto-detect server IP if not provided
 async function detectServerIP() {
   try {
@@ -94,14 +96,12 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../client/dist/index.html'));
 });
 
-const PORT = process.env.PORT || 3000;
-
 // Start server with IP detection
 async function startServer() {
   await detectServerIP();
   
   server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`Backend server running on port ${PORT}`);
     console.log(`Server IP: ${process.env.SERVER_IP || 'localhost'}`);
     console.log(`GitHub Callback URL: ${process.env.GITHUB_CALLBACK_URL}`);
   });

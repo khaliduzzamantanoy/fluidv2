@@ -164,8 +164,8 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/fluid/server
-ExecStart=/usr/bin/node index.js
+WorkingDirectory=/opt/fluid
+ExecStart=/usr/bin/npm run start:all
 Restart=always
 RestartSec=10
 Environment=NODE_ENV=production
