@@ -6,6 +6,7 @@ import io from 'socket.io-client';
 // Step Components
 import AuthStep from './components/AuthStep';
 import RepoStep from './components/RepoStep';
+import VpsStep from './components/VpsStep';
 import DirectoryStep from './components/DirectoryStep';
 import EnvStep from './components/EnvStep';
 import DomainStep from './components/DomainStep';
@@ -19,12 +20,14 @@ const socket = io('http://localhost:3000');
 
 function App() {
   const [currentStep, setCurrentStep] = useState(1);
-  const [totalSteps] = useState(9);
+  const [totalSteps] = useState(10);
   const [installData, setInstallData] = useState({
     githubToken: null,
     githubUser: null,
     repo: null,
     permissions: ['read', 'write'],
+    vpsConfig: null,
+    sshKeys: null,
     projectDir: '',
     envVars: {},
     domain: '',
@@ -61,13 +64,14 @@ function App() {
   const steps = [
     { number: 1, title: 'GitHub Auth', icon: Github },
     { number: 2, title: 'Repository', icon: Github },
-    { number: 3, title: 'Directory', icon: Server },
-    { number: 4, title: 'Environment', icon: Terminal },
-    { number: 5, title: 'Domain', icon: Globe },
-    { number: 6, title: 'DNS Check', icon: Globe },
-    { number: 7, title: 'SSL Setup', icon: Shield },
-    { number: 8, title: 'Build & Deploy', icon: Terminal },
-    { number: 9, title: 'Complete', icon: CheckCircle },
+    { number: 3, title: 'VPS Connect', icon: Server },
+    { number: 4, title: 'Directory', icon: Server },
+    { number: 5, title: 'Environment', icon: Terminal },
+    { number: 6, title: 'Domain', icon: Globe },
+    { number: 7, title: 'DNS Check', icon: Globe },
+    { number: 8, title: 'SSL Setup', icon: Shield },
+    { number: 9, title: 'Build & Deploy', icon: Terminal },
+    { number: 10, title: 'Complete', icon: CheckCircle },
   ];
 
   const renderStep = () => {
@@ -77,16 +81,18 @@ function App() {
       case 2:
         return <RepoStep data={installData} onUpdate={updateInstallData} onNext={nextStep} onPrev={prevStep} />;
       case 3:
-        return <DirectoryStep data={installData} onUpdate={updateInstallData} onNext={nextStep} onPrev={prevStep} />;
+        return <VpsStep data={installData} onUpdate={updateInstallData} onNext={nextStep} onPrev={prevStep} />;
       case 4:
-        return <EnvStep data={installData} onUpdate={updateInstallData} onNext={nextStep} onPrev={prevStep} />;
+        return <DirectoryStep data={installData} onUpdate={updateInstallData} onNext={nextStep} onPrev={prevStep} />;
       case 5:
-        return <DomainStep data={installData} onUpdate={updateInstallData} onNext={nextStep} onPrev={prevStep} />;
+        return <EnvStep data={installData} onUpdate={updateInstallData} onNext={nextStep} onPrev={prevStep} />;
       case 6:
-        return <DnsStep data={installData} onUpdate={updateInstallData} onNext={nextStep} onPrev={prevStep} />;
+        return <DomainStep data={installData} onUpdate={updateInstallData} onNext={nextStep} onPrev={prevStep} />;
       case 7:
-        return <SslStep data={installData} onUpdate={updateInstallData} onNext={nextStep} onPrev={prevStep} />;
+        return <DnsStep data={installData} onUpdate={updateInstallData} onNext={nextStep} onPrev={prevStep} />;
       case 8:
+        return <SslStep data={installData} onUpdate={updateInstallData} onNext={nextStep} onPrev={prevStep} />;
+      case 9:
         return (
           <React.Suspense fallback={<div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>}>
             <BuildStep 
@@ -101,7 +107,7 @@ function App() {
             />
           </React.Suspense>
         );
-      case 9:
+      case 10:
         return (
           <React.Suspense fallback={<div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>}>
             <CompleteStep data={installData} />

@@ -16,6 +16,7 @@ const sslRoutes = require('./routes/ssl');
 const pm2Routes = require('./routes/pm2');
 const deploymentRoutes = require('./routes/deployment');
 const cleanupRoutes = require('./routes/cleanup');
+const vpsRoutes = require('./routes/vps');
 
 dotenv.config();
 
@@ -71,6 +72,7 @@ app.use('/api/ssl', sslRoutes);
 app.use('/api/pm2', pm2Routes);
 app.use('/api/deployment', deploymentRoutes);
 app.use('/api/cleanup', cleanupRoutes);
+app.use('/api/vps', vpsRoutes);
 
 // Socket.io connection handling
 io.on('connection', (socket) => {

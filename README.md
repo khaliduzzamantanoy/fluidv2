@@ -1,21 +1,21 @@
 # Fluid VPS Installer
 
-A professional-grade web-based VPS installer for Ubuntu that simplifies deploying web applications from GitHub repositories with automated SSL, DNS configuration, and process management.
+A centralized Vercel-like deployment platform for Ubuntu VPS. Deploy your GitHub projects to your VPS with a single click through a beautiful web interface.
 
 ## Features
 
-- **🔐 GitHub Authentication** - Support for both personal access tokens and device code flow
+- **🔐 GitHub Authentication** - Central OAuth app for all users (device code flow + personal tokens)
+- **🖥️ VPS Connection** - Connect multiple VPSs via SSH with secure authentication
 - **📦 Repository Management** - Select repositories with permission management
-- **📁 Project Setup** - Automatic directory creation and git cloning
+- **📁 Remote Setup** - Automatic directory creation and git cloning on remote VPS
 - **🔧 Environment Variables** - Smart parsing with auto-detection of keys, URLs, and secrets
 - **🌐 Domain Configuration** - VPS IP auto-detection with domain setup
 - **🔍 DNS Verification** - Real-time DNS checking and propagation monitoring
 - **🛡️ SSL Management** - Let's Encrypt, Cloudflare, and self-signed certificate support
 - **🏗️ Build Automation** - Auto-detection of project types and build commands
 - **📺 Live Terminal** - Real-time terminal output via WebSocket streaming
-- **🔑 SSH Key Generation** - Automatic SSH key generation for GitHub access
 - **⚡ PM2 Integration** - Process management with auto-startup configuration
-- **🚀 One-Click Deployment** - Complete automated deployment pipeline
+- **🚀 One-Click Deployment** - Complete automated deployment pipeline to remote VPS
 
 ## Tech Stack
 
@@ -36,42 +36,83 @@ A professional-grade web-based VPS installer for Ubuntu that simplifies deployin
 
 ## Prerequisites
 
-- Ubuntu Server (20.04+ recommended)
+### For Central Server
 - Node.js 18+ and npm
-- Git
+- GitHub OAuth app
+- Domain name (recommended for production)
+
+### For User VPS
+- Ubuntu Server (20.04+ recommended)
+- SSH access (root or sudo user)
 - Domain name (optional but recommended)
 - GitHub account with repository access
 
 ## Installation
 
-### Quick Install (One-Line Curl Command)
+### Central Server Setup
 
-The fastest way to install Fluid on your Ubuntu VPS:
+#### 1. Clone and Setup Central Server
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yourusername/fluid-vps-installer/main/install.sh | bash
+git clone https://github.com/khaliduzzamantanoy/ubuntufluid.git
+cd ubuntufluid
+
+# Install dependencies
+npm install
+cd server && npm install
+cd ../client && npm install
+
+# Build frontend
+npm run build
 ```
 
-This single command will:
-- Install all system dependencies (Node.js, Docker, Nginx, etc.)
-- Clone and set up the Fluid installer
-- Configure systemd service
-- Setup Nginx reverse proxy
-- Start the web interface
-- Provide you with the access URL
+#### 2. Configure Environment
 
-**After installation**, the Fluid installer will:
-- Deploy your project using the web interface
-- Automatically remove itself from your VPS after successful deployment
-- Keep your deployed application running in the background
+```bash
+cd server
+cp .env.example .env
+```
+
+Edit `.env` with your GitHub OAuth credentials:
+```env
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+GITHUB_CALLBACK_URL=https://your-domain.com
+SERVER_URL=https://your-domain.com
+```
+
+#### 3. Start Central Server
+
+```bash
+# Development
+npm run dev
+
+# Production
+npm run build
+npm start
+```
+
+### User VPS Setup
+
+Users can prepare their VPS by running the agent script:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/khaliduzzamantanoy/ubuntufluid/main/vps-agent.sh | bash
+```
+
+This will:
+- Install Node.js, Docker, Nginx, PM2
+- Configure SSH access
+- Setup firewall rules
+- Prepare the VPS for remote deployment
 
 ### Manual Installation
 
 #### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/fluid-vps-installer.git
-cd fluid-vps-installer
+git clone https://github.com/khaliduzzamantanoy/ubuntufluid.git
+cd ubuntufluid
 ```
 
 #### 2. Install Dependencies
@@ -368,134 +409,62 @@ Each framework has optimized deployment configurations:
 - SSL certificates are auto-renewed when possible
 - All terminal operations are logged
 
-## Auto-Cleanup Feature
+## How It Works
 
-Fluid includes a self-cleaning mechanism to keep your VPS clean:
+### Central Server Architecture
 
-### How It Works
+Fluid uses a centralized architecture similar to Vercel:
 
-1. **Installation**: The curl command installs the Fluid installer temporarily
-2. **Deployment**: You deploy your project through the web interface
-3. **Cleanup**: After successful deployment, you can remove the installer with one click
-4. **Result**: Your application continues running, but the installer is gone
+1. **Central Server** - Hosted by you with a single GitHub OAuth app
+2. **User VPSs** - Users connect their VPSs via SSH to your central server
+3. **Remote Deployment** - Your central server deploys projects to connected VPSs
+4. **No Per-VPS Installation** - Users don't need to install Fluid on their VPSs
 
-### Cleanup Process
+### User Workflow
 
-When you click "Remove Installer from VPS" in the completion screen:
+1. **User prepares VPS** - Runs the agent script to install dependencies
+2. **User connects VPS** - Provides SSH credentials to your central server
+3. **User authenticates** - Uses your central OAuth app (or personal token)
+4. **User selects repo** - Chooses a GitHub repository
+5. **One-click deploy** - Your central server deploys to their VPS remotely
 
-- Stops and disables the Fluid systemd service
-- Removes systemd service files
-- Removes Nginx configuration for the installer
-- Deletes all Fluid files from `/opt/fluid`
-- Cleans up temporary files
-- **Your deployed application continues running via PM2**
+### VPS Agent Script
 
-### Safety Checks
-
-Before cleanup, the system verifies:
-- PM2 processes are running (your deployments)
-- It's safe to remove the installer
-- Your applications won't be affected
-
-## One-Line Installation Details
-
-The curl installation command performs these steps automatically:
-
-### System Dependencies
-- Node.js & npm
-- Git
-- Python3 & pip
-- Build tools
-- Nginx
-- Certbot (for SSL)
-- Docker & Docker Compose
-- PM2 (process manager)
-
-### Setup Steps
-1. **Auto-detects server IP** using public IP detection service
-2. Clones Fluid repository to temp directory
-3. Installs Node.js dependencies
-4. Builds React frontend
-5. Copies files to `/opt/fluid`
-6. **Configures dynamic IP** in environment variables
-7. Creates systemd service
-8. Configures Nginx reverse proxy
-9. Starts the service
-10. Displays access URL with detected IP
-
-### Dynamic IP Handling
-
-The installer automatically handles dynamic server IPs:
-
-- **Installation Phase**: Detects public IP using `api.ipify.org`
-- **Configuration**: Sets `SERVER_IP` and `GITHUB_CALLBACK_URL` in `.env`
-- **Runtime**: Server auto-detects IP if not configured
-- **GitHub OAuth**: Callback URL automatically configured with detected IP
-- **No Manual IP Entry**: Users don't need to know their IP beforehand
-
-### Environment Variables
-You can optionally provide GitHub OAuth credentials:
+Users run this on their VPS to prepare it for deployment:
 
 ```bash
-export GITHUB_CLIENT_ID="your_client_id"
-export GITHUB_CLIENT_SECRET="your_client_secret"
-curl -fsSL https://raw.githubusercontent.com/yourusername/fluid-vps-installer/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/khaliduzzamantanoy/ubuntufluid/main/vps-agent.sh | bash
 ```
 
-**Important**: Since this is an open-source project, each user needs their own GitHub OAuth credentials. See the GitHub OAuth Setup section below.
-
-### Installation Logs
-All installation steps are logged to `/tmp/fluid-install.log` for troubleshooting.
+This installs:
+- Node.js, Docker, Nginx, PM2
+- Configures SSH access
+- Sets up firewall rules
+- Prepares for remote deployment
 
 ## GitHub OAuth Setup
 
-Since Fluid is an open-source project, each user needs their own GitHub OAuth credentials to use the device code flow authentication. Here's how to set it up:
-
-### Option 1: Provide OAuth Credentials During Installation
-
-```bash
-export GITHUB_CLIENT_ID="your_github_client_id"
-export GITHUB_CLIENT_SECRET="your_github_client_secret"
-curl -fsSL https://raw.githubusercontent.com/yourusername/fluid-vps-installer/main/install.sh | bash
-```
-
-### Option 2: Configure After Installation
-
-If you didn't provide OAuth credentials during installation, you can configure them manually:
-
-1. **SSH into your VPS**
-2. **Edit the environment file**:
-   ```bash
-   sudo nano /opt/fluid/server/.env
-   ```
-3. **Add your GitHub OAuth credentials**:
-   ```env
-   GITHUB_CLIENT_ID=your_actual_client_id
-   GITHUB_CLIENT_SECRET=your_actual_client_secret
-   GITHUB_CALLBACK_URL=http://auto-detected-ip:3000
-   SERVER_IP=auto-detected-ip
-   ```
-   - The `SERVER_IP` is auto-detected during installation
-   - Check the server logs or run `curl https://api.ipify.org` to get your IP
-4. **Restart the Fluid service**:
-   ```bash
-   sudo systemctl restart fluid-installer
-   ```
+Since Fluid is a centralized service, you need to create a single GitHub OAuth app for your central server. All users will authenticate through your OAuth app.
 
 ### Creating Your GitHub OAuth App
 
 1. **Go to GitHub Settings**: https://github.com/settings/developers
 2. **Click "New OAuth App"**
 3. **Fill in the application details**:
-   - **Application name**: Fluid VPS Installer (or any name you prefer)
-   - **Homepage URL**: `http://your-server-ip:3000` (IP will be auto-detected)
-   - **Application description**: VPS deployment tool
-   - **Authorization callback URL**: `http://your-server-ip:3000` (IP will be auto-detected)
-4. **Click "Register application"**
-5. **Copy your Client ID and generate a Client Secret**
-6. **Use these credentials** in the installation or configuration
-
-**Note**: The installer automatically detects your server's public IP during installation and configures the GitHub callback URL accordingly. You don't need to know your IP beforehand.
+   - **Application name**: Fluid VPS Installer (or your brand name)
+   - **Homepage URL**: `https://your-fluid-domain.com`
+   - **Application description**: VPS deployment platform
+   - **Authorization callback URL**: `https://your-fluid-domain.com`
+4. **Enable Device Flow**: Check "Allow this OAuth App to authorize users via the device flow"
+5. **Click "Register application"**
+6. **Copy your Client ID and generate a Client Secret**
+7. **Add credentials to your central server's `.env` file**:
+   ```env
+   GITHUB_CLIENT_ID=your_actual_client_id
+   GITHUB_CLIENT_SECRET=your_actual_client_secret
+   GITHUB_CALLBACK_URL=https://your-fluid-domain.com
+   SERVER_URL=https://your-fluid-domain.com
+   ```
 
 ### GitHub OAuth Scopes Required
 
@@ -506,26 +475,26 @@ The OAuth app needs the following scopes:
 
 ### Authentication Methods
 
-Fluid supports two authentication methods:
+Fluid supports two authentication methods for users:
 
 #### 1. Personal Access Token (Simple)
-- Generate a token at: https://github.com/settings/tokens
+- Users generate their own token at: https://github.com/settings/tokens
 - Select scopes: `repo` and `user`
 - Use the token directly in the Fluid UI
-- No OAuth app required
+- No OAuth app setup required for users
 
-#### 2. Device Code Flow (Recommended for Multi-User)
-- Requires GitHub OAuth app setup (as described above)
-- More secure for shared installations
+#### 2. Device Code Flow (Recommended)
+- Uses your central OAuth app
+- More secure for production
 - Users authenticate on their own devices
-- Better for production environments
+- Better for multi-user environments
 
 ### Security Notes
 
 - **Never commit** your GitHub OAuth credentials to public repositories
-- **Each user** should create their own OAuth app for their VPS
-- **Personal access tokens** are simpler but less secure for shared use
-- **Device code flow** is the recommended method for open-source usage
+- **Keep your OAuth app secret secure** on the central server
+- **Users authenticate through your OAuth app** - they don't need their own
+- **Personal access tokens** are stored only in session, not persisted
 
 ## Troubleshooting
 

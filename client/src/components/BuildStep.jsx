@@ -46,69 +46,81 @@ export default function BuildStep({ data, onUpdate, onNext, onPrev, socket, sess
     setProgress(0);
 
     try {
-      // Step 1: Clone Repository
-      setCurrentStep('clone');
+      // Step 1: Setup VPS
+      setCurrentStep('setup');
       setProgress(10);
-      await axios.post('/api/project/clone', {
-        token: data.githubToken,
-        repoUrl: data.repo.clone_url,
-        targetDir: data.projectDir,
+      await axios.post('/api/vps/setup', {
+        ...data.vpsConfig,
+        projectDir: data.projectDir,
+        sshPublicKey: data.sshKeys?.publicKeyOpenSSH
+      });
+
+      // Step 2: Clone Repository on VPS
+      setCurrentStep('clone');
+      setProgress(20);
+      await axios.post('/api/vps/execute', {
+        ...data.vpsConfig,
+        command: `git clone ${data.repo.clone_url} ${data.projectDir}`,
         sessionId
       });
 
-      // Step 2: Detect Project Type
+      // Step 3: Detect Project Type
       setCurrentStep('detect');
-      setProgress(20);
-      const typeResponse = await axios.post('/api/project/detect-type', { projectPath: data.projectDir });
+      setProgress(30);
+      const typeResponse = await axios.post('/api/vps/execute', {
+        ...data.vpsConfig,
+        command: `cd ${data.projectDir} && ls -la`,
+        sessionId
+      });
       setProjectType(typeResponse.data);
       onUpdate('projectType', typeResponse.data);
 
-      // Step 3: Install Dependencies
+      // Step 4: Install Dependencies on VPS
       setCurrentStep('install');
-      setProgress(40);
-      await axios.post('/api/project/install-deps', {
-        projectPath: data.projectDir,
-        projectType: typeResponse.data.type,
-        framework: typeResponse.data.framework,
+      setProgress(50);
+      await axios.post('/api/vps/install-deps', {
+        ...data.vpsConfig,
+        projectType: typeResponse.data?.type || 'nodejs',
+        framework: typeResponse.data?.framework || 'generic',
         sessionId
       });
 
-      // Step 4: Build Project
+      // Step 5: Build Project on VPS
       setCurrentStep('build');
-      setProgress(60);
+      setProgress(70);
       if (buildCommands?.build) {
-        // Execute build command via terminal
-        socket.emit('terminal-command', {
+        await axios.post('/api/vps/execute', {
+          ...data.vpsConfig,
           command: `cd ${data.projectDir} && ${buildCommands.build}`,
           sessionId
         });
       }
 
-      // Step 5: Configure Nginx
+      // Step 6: Configure Nginx on VPS
       setCurrentStep('configure');
-      setProgress(75);
-      await axios.post('/api/ssl/configure-nginx', {
-        domain: data.domain,
-        projectPath: data.projectDir,
-        port: 3000,
+      setProgress(80);
+      await axios.post('/api/vps/execute', {
+        ...data.vpsConfig,
+        command: `sudo nginx -t && sudo systemctl reload nginx`,
         sessionId
       });
 
-      // Step 6: Setup SSL
+      // Step 7: Setup SSL on VPS
       setCurrentStep('ssl');
-      setProgress(85);
-      await axios.post('/api/ssl/install', {
-        domain: data.domain,
-        email: data.sslEmail,
-        provider: data.sslProvider,
-        sessionId
-      });
+      setProgress(90);
+      if (data.domain && data.sslProvider === 'letsencrypt') {
+        await axios.post('/api/vps/execute', {
+          ...data.vpsConfig,
+          command: `sudo certbot --nginx -d ${data.domain} -d www.${data.domain} --non-interactive --agree-tos --email ${data.sslEmail}`,
+          sessionId
+        });
+      }
 
-      // Step 7: Setup PM2
+      // Step 8: Setup PM2 on VPS
       setCurrentStep('pm2');
       setProgress(95);
-      // PM2 setup would go here
-      socket.emit('terminal-command', {
+      await axios.post('/api/vps/execute', {
+        ...data.vpsConfig,
         command: `cd ${data.projectDir} && pm2 start ${buildCommands?.start || 'npm start'} --name ${data.repo.name}`,
         sessionId
       });
