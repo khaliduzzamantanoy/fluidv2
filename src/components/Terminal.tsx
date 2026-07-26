@@ -121,7 +121,9 @@ export default function Terminal({ command, cwd, autoRun = true, onComplete }: T
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    // The server runs on port 6776, use that for WebSocket connection
     const wsUrl = `${protocol}//${window.location.hostname}:6776/ws/terminal`;
+    console.log('Connecting to WebSocket:', wsUrl);
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
 
@@ -159,8 +161,10 @@ export default function Terminal({ command, cwd, autoRun = true, onComplete }: T
       }
     };
 
-    ws.onerror = () => {
-      writeToTerm('\r\n\x1b[31m[WebSocket Connection Error — is the server running on port 6776?]\x1b[0m\r\n');
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      writeToTerm('\r\n\x1b[31m[WebSocket Connection Error]\x1b[0m\r\n');
+      writeToTerm(`\x1b[31mURL: ${wsUrl}\x1b[0m\r\n`);
       setIsRunning(false);
       setStatus('failed');
       if (onComplete) onComplete(false);
