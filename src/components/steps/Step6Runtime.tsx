@@ -18,7 +18,7 @@ export default function Step6Runtime({ dirPath, repoName, startCmd, port, onNext
 
   const cleanRepoName = repoName ? repoName.replace(/[^a-zA-Z0-9_-]/g, '') : 'my-app';
   
-  // Format pm2 start command properly
+  // Format pm2 start command properly - use the detected start command
   const pm2Command = `cd ${dirPath} && pm2 delete ${cleanRepoName} || true && pm2 start "${startCmd}" --name "${cleanRepoName}" && pm2 save && pm2 startup`;
 
   return (
