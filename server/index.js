@@ -596,6 +596,7 @@ fastify.register(async function (fastifyApp) {
         try {
           const pty = await import('node-pty').catch(() => null);
           if (pty) {
+            console.log('Using node-pty for command execution');
             activePty = pty.spawn('/bin/bash', ['-c', command], {
               name: 'xterm-256color',
               cols: 160,
@@ -609,9 +610,12 @@ fastify.register(async function (fastifyApp) {
               }
             });
 
-            activePty.onData((data) => send('stdout', data));
+            activePty.onData((data) => {
+              send('stdout', data);
+            });
 
             activePty.onExit(({ exitCode }) => {
+              console.log('Process exited with code:', exitCode);
               activePty = null;
               send('exit', exitCode === 0
                 ? '\r\n\x1b[32m✓ Process finished successfully\x1b[0m\r\n'
@@ -621,10 +625,13 @@ fastify.register(async function (fastifyApp) {
             });
             usedPty = true;
           }
-        } catch (e) { }
+        } catch (e) {
+          console.log('node-pty not available, using fallback:', e.message);
+        }
 
         // Fallback: spawn with unbuffered env
         if (!usedPty) {
+          console.log('Using spawn fallback for command execution');
           const isWin = process.platform === 'win32';
           const shell = isWin ? 'cmd.exe' : '/bin/bash';
           const shellArgs = isWin ? ['/c', command] : ['-c', command];
@@ -640,10 +647,18 @@ fastify.register(async function (fastifyApp) {
             }
           });
 
-          proc.stdout.on('data', (chunk) => send('stdout', chunk.toString()));
-          proc.stderr.on('data', (chunk) => send('stderr', chunk.toString()));
+          proc.stdout.on('data', (chunk) => {
+            console.log('stdout:', chunk.toString());
+            send('stdout', chunk.toString());
+          });
+          
+          proc.stderr.on('data', (chunk) => {
+            console.log('stderr:', chunk.toString());
+            send('stderr', chunk.toString());
+          });
 
           proc.on('close', (code) => {
+            console.log('Process closed with code:', code);
             send('exit', code === 0
               ? '\r\n\x1b[32m✓ Process finished successfully\x1b[0m\r\n'
               : `\r\n\x1b[31m✗ Process exited with code ${code}\x1b[0m\r\n`
@@ -652,8 +667,19 @@ fastify.register(async function (fastifyApp) {
           });
 
           proc.on('error', (err) => {
+            console.log('Process error:', err.message);
             send('error', `\r\n\x1b[31mCommand error: ${err.message}\x1b[0m\r\n`);
           });
+          
+          // Add timeout to prevent hanging
+          setTimeout(() => {
+            if (!proc.killed) {
+              console.log('Command timeout, killing process');
+              proc.kill();
+              send('error', '\r\n\x1b[31mCommand timed out after 5 minutes\x1b[0m\r\n');
+              connection.socket.send(JSON.stringify({ type: 'exit', code: -1 }));
+            }
+          }, 5 * 60 * 1000); // 5 minute timeout
         }
       } catch (err) {
         send('error', `Invalid WS message: ${err.message}\n`);
