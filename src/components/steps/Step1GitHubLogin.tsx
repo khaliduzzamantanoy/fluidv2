@@ -25,7 +25,15 @@ export default function Step1GitHubLogin({ onNext }: Step1Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientId: showCustomClient ? clientId : '' })
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        setError(`Server response error (${res.status}): ${text.substring(0, 150)}`);
+        setLoading(false);
+        return;
+      }
 
       if (data.success && data.user_code) {
         setDeviceData(data);
@@ -55,7 +63,14 @@ export default function Step1GitHubLogin({ onNext }: Step1Props) {
               deviceCode: deviceData.device_code
             })
           });
-          const data = await res.json();
+          const text = await res.text();
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch (e) {
+            timer = setTimeout(poll, interval);
+            return;
+          }
 
           if (data.success && data.accessToken) {
             setPollStatus('success');

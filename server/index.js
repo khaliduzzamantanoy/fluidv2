@@ -43,14 +43,13 @@ if (!fs.existsSync(clientOutPath)) {
 await fastify.register(fastifyStatic, {
   root: clientOutPath,
   prefix: '/',
-  index: ['index.html'],
-  wildcard: false,
 });
 
-// Serve index.html for SPA client routes and GET /
+// SPA fallback for HTML pages, but STRICT JSON 404 for any /api/ endpoint
 fastify.setNotFoundHandler((request, reply) => {
-  if (request.raw.url && (request.raw.url.startsWith('/api') || request.raw.url.startsWith('/ws'))) {
-    return reply.status(404).send({ success: false, error: 'API endpoint not found' });
+  const reqUrl = request.url || request.raw?.url || '';
+  if (reqUrl.includes('/api/') || reqUrl.startsWith('/api') || reqUrl.startsWith('/ws')) {
+    return reply.status(404).send({ success: false, error: `API endpoint not found: ${reqUrl}` });
   }
   const currentOut = findOutDir();
   const indexPath = path.join(currentOut, 'index.html');
@@ -102,7 +101,7 @@ function httpRequest(url, options = {}, data = null) {
 // ----------------------------------------------------
 fastify.post('/api/github/device-code', async (request, reply) => {
   const { clientId } = request.body || {};
-  const DEFAULT_CLIENT_ID = 'Ov23li44i69R3gU2sQvY'; // Default fallback or prompt user
+  const DEFAULT_CLIENT_ID = 'Ov23lixc10ZT3lahfJtf';
   const targetClientId = clientId && clientId.trim() ? clientId.trim() : DEFAULT_CLIENT_ID;
 
   try {
