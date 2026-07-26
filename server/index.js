@@ -623,6 +623,57 @@ fastify.post('/api/check-port', async (request, reply) => {
 });
 
 // ----------------------------------------------------
+// KILL PROCESS BY PORT
+// ----------------------------------------------------
+fastify.post('/api/kill-port', async (request, reply) => {
+  const { port } = request.body || {};
+  console.log('Killing process on port:', port);
+  
+  if (!port) {
+    return reply.status(400).send({ success: false, error: 'Port is required' });
+  }
+
+  try {
+    const isWin = process.platform === 'win32';
+    const killCommand = isWin 
+      ? `for /f "tokens=5" %a in ('netstat -ano ^| findstr :${port}') do taskkill /F /PID %a`
+      : `lsof -ti:${port} | xargs kill -9 2>/dev/null || fuser -k ${port}/tcp 2>/dev/null`;
+
+    const proc = spawn('bash', ['-c', killCommand]);
+    
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    
+    proc.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    const exitCode = await new Promise((resolve) => {
+      proc.on('close', (code) => resolve(code));
+    });
+
+    return reply.send({
+      success: true,
+      port: port,
+      exitCode,
+      stdout,
+      stderr,
+      message: `Attempted to kill process on port ${port}`
+    });
+  } catch (err) {
+    console.log('Kill port error:', err.message);
+    return reply.status(500).send({ 
+      success: false, 
+      error: err.message 
+    });
+  }
+});
+
+// ----------------------------------------------------
 // REST API COMMAND EXECUTION (FALLBACK/DEBUGGING)
 // ----------------------------------------------------
 fastify.post('/api/execute', async (request, reply) => {

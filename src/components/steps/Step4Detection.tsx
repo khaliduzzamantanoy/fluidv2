@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Cpu, RefreshCw, ArrowRight, Settings, CheckCircle2, Terminal as TerminalIcon, AlertTriangle } from 'lucide-react';
+import { Cpu, RefreshCw, ArrowRight, Settings, CheckCircle2, Terminal as TerminalIcon, AlertTriangle, XCircle } from 'lucide-react';
 
 interface Step4Props {
   dirPath: string;
@@ -71,6 +71,28 @@ export default function Step4Detection({ dirPath, onNext }: Step4Props) {
         inUse: false,
         message: 'Could not check port availability'
       });
+    } finally {
+      setCheckingPort(false);
+    }
+  };
+
+  const killProcessOnPort = async (portToKill: number) => {
+    setCheckingPort(true);
+    try {
+      const res = await fetch('/api/kill-port', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ port: portToKill })
+      });
+      const data = await res.json();
+      if (data.success) {
+        // Wait a moment and then recheck the port
+        setTimeout(() => {
+          checkPortAvailability(portToKill);
+        }, 1000);
+      }
+    } catch (err: any) {
+      console.error('Failed to kill process:', err);
     } finally {
       setCheckingPort(false);
     }
@@ -179,6 +201,15 @@ export default function Step4Detection({ dirPath, onNext }: Step4Props) {
                   {portCheck && (
                     <div className={`mt-1 text-xs ${portCheck.inUse ? 'text-red-400' : 'text-emerald-400'}`}>
                       {portCheck.message}
+                      {portCheck.inUse && (
+                        <button
+                          onClick={() => killProcessOnPort(port)}
+                          disabled={checkingPort}
+                          className="ml-2 px-2 py-1 bg-red-600 hover:bg-red-500 text-white text-xs font-semibold rounded transition disabled:opacity-50"
+                        >
+                          {checkingPort ? 'Killing...' : 'Kill Process'}
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -186,11 +217,21 @@ export default function Step4Detection({ dirPath, onNext }: Step4Props) {
             </div>
 
             {portCheck && portCheck.inUse && (
-              <div className="p-3 bg-red-950/40 border border-red-800/60 rounded-xl flex items-center space-x-2 text-red-300 text-xs">
-                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                <span>
-                  Port {port} is already in use. Please choose a different port or stop the conflicting process.
-                </span>
+              <div className="p-3 bg-red-950/40 border border-red-800/60 rounded-xl flex items-center justify-between text-red-300 text-xs">
+                <div className="flex items-center space-x-2">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  <span>
+                    Port {port} is already in use. Choose a different port or kill the process.
+                  </span>
+                </div>
+                <button
+                  onClick={() => killProcessOnPort(port)}
+                  disabled={checkingPort}
+                  className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white text-xs font-semibold rounded-lg transition disabled:opacity-50 flex items-center space-x-1"
+                >
+                  <XCircle className="w-3 h-3" />
+                  <span>{checkingPort ? 'Killing...' : 'Kill Process'}</span>
+                </button>
               </div>
             )}
 
