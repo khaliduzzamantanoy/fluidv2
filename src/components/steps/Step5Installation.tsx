@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Terminal as TerminalIcon, ArrowRight, CheckCircle2, Play } from 'lucide-react';
+import { Terminal as TerminalIcon, ArrowRight, CheckCircle2, Play, Loader2 } from 'lucide-react';
 import Terminal from '../Terminal';
 
 interface Step5Props {
@@ -70,36 +70,47 @@ export default function Step5Installation({ dirPath, installCmd, buildCmd, envVa
           {hasEnvVars && (
             <div className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-mono border ${
               phase === 'env'
-                ? 'bg-brand-500/20 text-brand-400 border-brand-500/40 font-semibold'
+                ? 'bg-brand-500/20 text-brand-400 border-brand-500/40 font-semibold animate-pulse'
                 : envSuccess
                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                 : 'bg-dark-card text-gray-500 border-gray-800'
             }`}>
+              {envSuccess ? <CheckCircle2 className="w-3 h-3" /> : phase === 'env' ? <Loader2 className="w-3 h-3 animate-spin" /> : <div className="w-3 h-3" />}
               <span>1. Create .env</span>
             </div>
           )}
 
           <div className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-mono border ${
             phase === 'install'
-              ? 'bg-brand-500/20 text-brand-400 border-brand-500/40 font-semibold'
+              ? 'bg-brand-500/20 text-brand-400 border-brand-500/40 font-semibold animate-pulse'
               : installSuccess
               ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
               : 'bg-dark-card text-gray-500 border-gray-800'
           }`}>
+            {installSuccess ? <CheckCircle2 className="w-3 h-3" /> : phase === 'install' ? <Loader2 className="w-3 h-3 animate-spin" /> : <div className="w-3 h-3" />}
             <span>{hasEnvVars ? '2' : '1'}. {installCmd}</span>
           </div>
 
           {buildCmd && (
             <div className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-mono border ${
               phase === 'build'
-                ? 'bg-brand-500/20 text-brand-400 border-brand-500/40 font-semibold'
+                ? 'bg-brand-500/20 text-brand-400 border-brand-500/40 font-semibold animate-pulse'
                 : buildSuccess
                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                 : 'bg-dark-card text-gray-500 border-gray-800'
             }`}>
+              {buildSuccess ? <CheckCircle2 className="w-3 h-3" /> : phase === 'build' ? <Loader2 className="w-3 h-3 animate-spin" /> : <div className="w-3 h-3" />}
               <span>{hasEnvVars ? '3' : '2'}. {buildCmd}</span>
             </div>
           )}
+        </div>
+
+        {/* Current Phase Status */}
+        <div className="text-center">
+          {phase === 'env' && <span className="text-xs text-brand-400 font-medium">Creating .env file...</span>}
+          {phase === 'install' && <span className="text-xs text-brand-400 font-medium">Installing dependencies...</span>}
+          {phase === 'build' && <span className="text-xs text-brand-400 font-medium">Building application...</span>}
+          {phase === 'completed' && <span className="text-xs text-emerald-400 font-medium">Installation completed successfully!</span>}
         </div>
 
         {/* Live Terminal */}
