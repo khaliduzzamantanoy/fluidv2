@@ -8,16 +8,31 @@ interface Step5Props {
   dirPath: string;
   installCmd: string;
   buildCmd: string;
+  envVars: Record<string, string>;
   onNext: () => void;
 }
 
-export default function Step5Installation({ dirPath, installCmd, buildCmd, onNext }: Step5Props) {
-  const [phase, setPhase] = useState<'install' | 'build' | 'completed'>('install');
+export default function Step5Installation({ dirPath, installCmd, buildCmd, envVars, onNext }: Step5Props) {
+  const [phase, setPhase] = useState<'env' | 'install' | 'build' | 'completed'>('env');
+  const [envSuccess, setEnvSuccess] = useState(false);
   const [installSuccess, setInstallSuccess] = useState(false);
   const [buildSuccess, setBuildSuccess] = useState(false);
 
+  // Create .env file if environment variables are provided
+  const hasEnvVars = Object.keys(envVars).length > 0;
+  const envCommand = hasEnvVars 
+    ? `cd ${dirPath} && echo '${Object.entries(envVars).map(([k, v]) => `${k}=${v}`).join('\n')}' > .env`
+    : null;
+
   const fullInstallCmd = `cd ${dirPath} && ${installCmd}`;
   const fullBuildCmd = buildCmd ? `cd ${dirPath} && ${buildCmd}` : '';
+
+  const handleEnvComplete = (success: boolean) => {
+    setEnvSuccess(success);
+    if (success) {
+      setPhase('install');
+    }
+  };
 
   const handleInstallComplete = (success: boolean) => {
     setInstallSuccess(success);
@@ -52,6 +67,18 @@ export default function Step5Installation({ dirPath, installCmd, buildCmd, onNex
       <div className="max-w-3xl mx-auto space-y-4">
         {/* Execution Phase Tabs */}
         <div className="flex items-center justify-center space-x-4">
+          {hasEnvVars && (
+            <div className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-mono border ${
+              phase === 'env'
+                ? 'bg-brand-500/20 text-brand-400 border-brand-500/40 font-semibold'
+                : envSuccess
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                : 'bg-dark-card text-gray-500 border-gray-800'
+            }`}>
+              <span>1. Create .env</span>
+            </div>
+          )}
+
           <div className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-mono border ${
             phase === 'install'
               ? 'bg-brand-500/20 text-brand-400 border-brand-500/40 font-semibold'
@@ -59,7 +86,7 @@ export default function Step5Installation({ dirPath, installCmd, buildCmd, onNex
               ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
               : 'bg-dark-card text-gray-500 border-gray-800'
           }`}>
-            <span>1. {installCmd}</span>
+            <span>{hasEnvVars ? '2' : '1'}. {installCmd}</span>
           </div>
 
           {buildCmd && (
@@ -70,12 +97,20 @@ export default function Step5Installation({ dirPath, installCmd, buildCmd, onNex
                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                 : 'bg-dark-card text-gray-500 border-gray-800'
             }`}>
-              <span>2. {buildCmd}</span>
+              <span>{hasEnvVars ? '3' : '2'}. {buildCmd}</span>
             </div>
           )}
         </div>
 
         {/* Live Terminal */}
+        {phase === 'env' && envCommand && (
+          <Terminal
+            command={envCommand}
+            cwd={dirPath}
+            onComplete={handleEnvComplete}
+          />
+        )}
+
         {phase === 'install' && (
           <Terminal
             command={fullInstallCmd}

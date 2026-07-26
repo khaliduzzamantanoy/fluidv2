@@ -177,6 +177,7 @@ export default function Wizard() {
               dirPath={wizardData.dirPath}
               installCmd={wizardData.installCmd}
               buildCmd={wizardData.buildCmd}
+              envVars={wizardData.envVars}
               onNext={() => goToNext()}
             />
           )}
