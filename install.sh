@@ -80,12 +80,11 @@ if [ -d "./server" ] && [ -f "./package.json" ]; then
   # Local copy if executing inside repository
   cp -r ./* "$FLUID_DIR/"
 else
-  # Remote download/clone from repo
-  echo -e "${GREEN}[INFO] Downloading Fluid codebase...${NC}"
-  git clone --depth 1 https://github.com/khaliduzzamantanoy/fluidv2.git "$FLUID_DIR" 2>/dev/null || {
-    echo -e "${YELLOW}[NOTICE] Direct git clone required authentication or repo URL changed. Downloading repository zip...${NC}"
-    curl -fsSL https://github.com/khaliduzzamantanoy/fluidv2/archive/refs/heads/main.tar.gz | tar -xz -C "$FLUID_DIR" --strip-components=1 2>/dev/null || {
-      echo -e "${RED}[ERROR] Failed to download fluidv2. Please ensure https://github.com/khaliduzzamantanoy/fluidv2 is set to PUBLIC on GitHub.${NC}"
+  # Remote archive download from repo
+  echo -e "${GREEN}[INFO] Downloading Fluid codebase archive...${NC}"
+  curl -fsSL https://github.com/khaliduzzamantanoy/fluidv2/archive/refs/heads/main.tar.gz | tar -xz -C "$FLUID_DIR" --strip-components=1 2>/dev/null || {
+    git clone --depth 1 https://github.com/khaliduzzamantanoy/fluidv2.git "$FLUID_DIR" || {
+      echo -e "${RED}[ERROR] Failed to download fluidv2.${NC}"
       exit 1
     }
   }
