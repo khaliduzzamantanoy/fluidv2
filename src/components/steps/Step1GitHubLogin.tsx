@@ -94,11 +94,28 @@ export default function Step1GitHubLogin({ onNext }: Step1Props) {
     return () => clearTimeout(timer);
   }, [pollStatus, deviceData]);
 
-  const copyCode = () => {
+  const copyCode = async () => {
     if (deviceData?.user_code) {
-      navigator.clipboard.writeText(deviceData.user_code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      try {
+        await navigator.clipboard.writeText(deviceData.user_code);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        console.error('Failed to copy:', err);
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = deviceData.user_code;
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        } catch (e) {
+          console.error('Fallback copy failed:', e);
+        }
+        document.body.removeChild(textArea);
+      }
     }
   };
 

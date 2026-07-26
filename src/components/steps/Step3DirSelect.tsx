@@ -54,8 +54,9 @@ export default function Step3DirSelect({ selectedRepo, branch, githubToken, onNe
     `GIT_TERMINAL_PROMPT=0 git clone --progress -b ${branch} ${cloneUrl} ${dirPath} 2>&1`,
   ].join(' && ');
 
-  const handleStartClone = () => {
+  const handleStartClone = async () => {
     setCloning(true);
+    console.log('Starting clone with command:', cloneCommand);
   };
 
   return (
