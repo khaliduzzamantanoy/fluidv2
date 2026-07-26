@@ -107,74 +107,50 @@ export default function Terminal({ command, cwd, autoRun = true, onComplete }: T
     };
   }, []);
 
-  const runCommand = (cmdToRun: string, workDir?: string) => {
+  const runCommand = async (cmdToRun: string, workDir?: string) => {
     if (!cmdToRun || !xtermRef.current) return;
 
     setIsRunning(true);
     setStatus('running');
     writeToTerm(`\x1b[33mExecuting: ${cmdToRun}\x1b[0m\r\n`);
 
-    // Close any existing connection
-    if (socketRef.current) {
-      socketRef.current.close();
-      socketRef.current = null;
-    }
+    // Use REST API instead of WebSocket for better compatibility
+    try {
+      const response = await fetch('/api/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: cmdToRun, cwd: workDir || '/tmp' })
+      });
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // The server runs on port 6776, use that for WebSocket connection
-    const wsUrl = `${protocol}//${window.location.hostname}:6776/ws/terminal`;
-    console.log('Connecting to WebSocket:', wsUrl);
-    const ws = new WebSocket(wsUrl);
-    socketRef.current = ws;
-
-    ws.binaryType = 'arraybuffer';
-
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ command: cmdToRun, cwd: workDir || '/tmp' }));
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(
-          event.data instanceof ArrayBuffer
-            ? new TextDecoder().decode(event.data)
-            : event.data
-        );
-
-        // Write any data payload immediately
-        if (msg.data && (msg.type === 'stdout' || msg.type === 'stderr' || msg.type === 'info' || msg.type === 'error')) {
-          writeToTerm(msg.data);
-        }
-
-        if (msg.type === 'exit') {
-          // Also write the exit message if it has data
-          if (msg.data) writeToTerm(msg.data);
-          const success = Number(msg.code) === 0;
-          setIsRunning(false);
-          setStatus(success ? 'success' : 'failed');
-          if (onComplete) onComplete(success);
-          ws.close();
-        }
-      } catch (_) {
-        // Raw string fallback
-        if (typeof event.data === 'string') writeToTerm(event.data);
+      const data = await response.json();
+      
+      if (data.stdout) {
+        writeToTerm(data.stdout);
       }
-    };
+      
+      if (data.stderr) {
+        writeToTerm('\r\n\x1b[31m' + data.stderr + '\x1b[0m\r\n');
+      }
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      writeToTerm('\r\n\x1b[31m[WebSocket Connection Error]\x1b[0m\r\n');
-      writeToTerm(`\x1b[31mURL: ${wsUrl}\x1b[0m\r\n`);
+      const success = data.success;
+      setIsRunning(false);
+      setStatus(success ? 'success' : 'failed');
+      
+      if (success) {
+        writeToTerm('\r\n\x1b[32m✓ Process finished successfully\x1b[0m\r\n');
+      } else {
+        writeToTerm('\r\n\x1b[31m✗ Process failed with code ' + data.exitCode + '\x1b[0m\r\n');
+      }
+
+      if (onComplete) onComplete(success);
+    } catch (error) {
+      console.error('Command execution error:', error);
+      writeToTerm('\r\n\x1b[31m[Command Execution Error]\x1b[0m\r\n');
+      writeToTerm('\x1b[31m' + (error as Error).message + '\x1b[0m\r\n');
       setIsRunning(false);
       setStatus('failed');
       if (onComplete) onComplete(false);
-    };
-
-    ws.onclose = () => {
-      if (status === 'running') {
-        setIsRunning(false);
-      }
-    };
+    }
   };
 
   return (
