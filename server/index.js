@@ -558,23 +558,96 @@ fastify.post('/api/system/cleanup', async (request, reply) => {
 });
 
 // ----------------------------------------------------
+// REST API COMMAND EXECUTION (FALLBACK/DEBUGGING)
+// ----------------------------------------------------
+fastify.post('/api/execute', async (request, reply) => {
+  const { command, cwd } = request.body || {};
+  console.log('REST API command execution:', command, 'CWD:', cwd);
+  
+  if (!command) {
+    return reply.status(400).send({ success: false, error: 'No command provided' });
+  }
+
+  const workDir = cwd && fs.existsSync(cwd) ? cwd : '/tmp';
+  console.log('Working directory:', workDir);
+
+  try {
+    const isWin = process.platform === 'win32';
+    const shell = isWin ? 'cmd.exe' : '/bin/bash';
+    const shellArgs = isWin ? ['/c', command] : ['-c', command];
+
+    const proc = spawn(shell, shellArgs, {
+      cwd: workDir,
+      env: {
+        ...process.env,
+        FORCE_COLOR: '1',
+        PYTHONUNBUFFERED: '1',
+        NPM_CONFIG_PROGRESS: 'true',
+        DEBIAN_FRONTEND: 'noninteractive',
+      }
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+      console.log('stdout:', chunk.toString());
+    });
+    
+    proc.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+      console.log('stderr:', chunk.toString());
+    });
+
+    const exitCode = await new Promise((resolve) => {
+      proc.on('close', (code) => {
+        console.log('Process closed with code:', code);
+        resolve(code);
+      });
+    });
+
+    return reply.send({
+      success: exitCode === 0,
+      exitCode,
+      stdout,
+      stderr,
+      workDir
+    });
+  } catch (err) {
+    console.log('Command execution error:', err.message);
+    return reply.status(500).send({ 
+      success: false, 
+      error: err.message 
+    });
+  }
+});
+
+// ----------------------------------------------------
 // WEBSOCKET TERMINAL EXECUTION (LIVE XTERM PTY STREAMING)
 // ----------------------------------------------------
 fastify.register(async function (fastifyApp) {
   fastifyApp.get('/ws/terminal', { websocket: true }, (connection, req) => {
+    console.log('WebSocket connection established');
     let activePty = null;
 
     const send = (type, data) => {
       try {
         if (connection.socket.readyState === 1) {
           connection.socket.send(JSON.stringify({ type, data }));
+        } else {
+          console.log('WebSocket not ready, state:', connection.socket.readyState);
         }
-      } catch (e) { }
+      } catch (e) {
+        console.log('Error sending WebSocket message:', e.message);
+      }
     };
 
     connection.socket.on('message', async (message) => {
       try {
+        console.log('Received WebSocket message:', message.toString());
         const parsed = JSON.parse(message.toString());
+        console.log('Parsed message:', parsed);
 
         // Resize PTY from frontend
         if (parsed.type === 'resize' && activePty) {
@@ -583,12 +656,15 @@ fastify.register(async function (fastifyApp) {
         }
 
         const { command, cwd } = parsed;
+        console.log('Command:', command, 'CWD:', cwd);
+        
         if (!command) {
           send('error', 'No command provided\n');
           return;
         }
 
         const workDir = cwd && fs.existsSync(cwd) ? cwd : '/tmp';
+        console.log('Working directory:', workDir);
         send('info', `\r\n\x1b[36m$ ${command}\x1b[0m\r\n`);
 
         // Try node-pty for true PTY (if installed)
