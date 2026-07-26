@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Cpu, RefreshCw, ArrowRight, Settings, CheckCircle2, Terminal as TerminalIcon } from 'lucide-react';
+import { Cpu, RefreshCw, ArrowRight, Settings, CheckCircle2, Terminal as TerminalIcon, AlertTriangle } from 'lucide-react';
 
 interface Step4Props {
   dirPath: string;
@@ -16,6 +16,8 @@ export default function Step4Detection({ dirPath, onNext }: Step4Props) {
   const [startCmd, setStartCmd] = useState('npm start');
   const [port, setPort] = useState<number>(3000);
   const [error, setError] = useState<string | null>(null);
+  const [portCheck, setPortCheck] = useState<{ inUse: boolean; message: string } | null>(null);
+  const [checkingPort, setCheckingPort] = useState(false);
 
   useEffect(() => {
     async function analyzeProject() {
@@ -49,6 +51,36 @@ export default function Step4Detection({ dirPath, onNext }: Step4Props) {
       analyzeProject();
     }
   }, [dirPath]);
+
+  const checkPortAvailability = async (portToCheck: number) => {
+    setCheckingPort(true);
+    setPortCheck(null);
+    try {
+      const res = await fetch('/api/check-port', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ port: portToCheck })
+      });
+      const data = await res.json();
+      setPortCheck({
+        inUse: data.inUse,
+        message: data.message
+      });
+    } catch (err: any) {
+      setPortCheck({
+        inUse: false,
+        message: 'Could not check port availability'
+      });
+    } finally {
+      setCheckingPort(false);
+    }
+  };
+
+  useEffect(() => {
+    if (port > 0) {
+      checkPortAvailability(port);
+    }
+  }, [port]);
 
   return (
     <div className="space-y-6">
@@ -129,19 +161,43 @@ export default function Step4Detection({ dirPath, onNext }: Step4Props) {
 
                 <div className="space-y-1">
                   <label className="text-xs text-gray-400 font-mono">Target App Port:</label>
-                  <input
-                    type="number"
-                    value={port}
-                    onChange={(e) => setPort(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-dark-bg border border-gray-700 rounded-xl text-white font-mono text-sm focus:border-brand-500 outline-none"
-                  />
+                  <div className="flex space-x-2">
+                    <input
+                      type="number"
+                      value={port}
+                      onChange={(e) => setPort(Number(e.target.value))}
+                      className="flex-1 px-3 py-2 bg-dark-bg border border-gray-700 rounded-xl text-white font-mono text-sm focus:border-brand-500 outline-none"
+                    />
+                    <button
+                      onClick={() => checkPortAvailability(port)}
+                      disabled={checkingPort}
+                      className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold rounded-xl transition disabled:opacity-50"
+                    >
+                      {checkingPort ? 'Checking...' : 'Check'}
+                    </button>
+                  </div>
+                  {portCheck && (
+                    <div className={`mt-1 text-xs ${portCheck.inUse ? 'text-red-400' : 'text-emerald-400'}`}>
+                      {portCheck.message}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
+            {portCheck && portCheck.inUse && (
+              <div className="p-3 bg-red-950/40 border border-red-800/60 rounded-xl flex items-center space-x-2 text-red-300 text-xs">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                <span>
+                  Port {port} is already in use. Please choose a different port or stop the conflicting process.
+                </span>
+              </div>
+            )}
+
             <button
               onClick={() => onNext({ detection, installCmd, buildCmd, startCmd, port })}
-              className="w-full flex items-center justify-center space-x-2 py-3.5 px-6 bg-brand-500 hover:bg-brand-400 text-white font-semibold rounded-xl shadow-lg transition"
+              disabled={portCheck?.inUse}
+              className="w-full flex items-center justify-center space-x-2 py-3.5 px-6 bg-brand-500 hover:bg-brand-400 text-white font-semibold rounded-xl shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span>Save & Start Installation</span>
               <ArrowRight className="w-4 h-4" />

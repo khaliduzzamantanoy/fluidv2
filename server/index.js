@@ -569,6 +569,60 @@ fastify.get('/ws-test', (request, reply) => {
 });
 
 // ----------------------------------------------------
+// PORT CONFLICT CHECK
+// ----------------------------------------------------
+fastify.post('/api/check-port', async (request, reply) => {
+  const { port } = request.body || {};
+  console.log('Checking port:', port);
+  
+  if (!port) {
+    return reply.status(400).send({ success: false, error: 'Port is required' });
+  }
+
+  try {
+    const isWin = process.platform === 'win32';
+    const checkCommand = isWin 
+      ? `netstat -ano | findstr :${port}`
+      : `netstat -tlnp 2>/dev/null | grep :${port} || ss -tlnp 2>/dev/null | grep :${port} || lsof -i :${port} 2>/dev/null`;
+
+    const proc = spawn('bash', ['-c', checkCommand]);
+    
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    
+    proc.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    const exitCode = await new Promise((resolve) => {
+      proc.on('close', (code) => resolve(code));
+    });
+
+    const isPortInUse = stdout.trim().length > 0 && exitCode === 0;
+    
+    return reply.send({
+      success: true,
+      port: port,
+      inUse: isPortInUse,
+      output: stdout,
+      message: isPortInUse 
+        ? `Port ${port} is already in use by another process` 
+        : `Port ${port} is available`
+    });
+  } catch (err) {
+    console.log('Port check error:', err.message);
+    return reply.status(500).send({ 
+      success: false, 
+      error: err.message 
+    });
+  }
+});
+
+// ----------------------------------------------------
 // REST API COMMAND EXECUTION (FALLBACK/DEBUGGING)
 // ----------------------------------------------------
 fastify.post('/api/execute', async (request, reply) => {
