@@ -12,7 +12,7 @@ import https from 'https';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const fastify = Fastify({ logger: true });
+const fastify = Fastify({ logger: { level: 'warn' } });
 
 await fastify.register(fastifyCors, { origin: true });
 await fastify.register(fastifyWebsocket);
@@ -46,7 +46,6 @@ const MIME_TYPES = {
   '.ttf':  'font/ttf',
   '.map':  'application/json',
 };
-
 
 // In-memory state for active temporary session (NO DATABASE)
 const sessionState = {
@@ -454,7 +453,6 @@ server {
 }
 `.trim();
 
-  // If on Linux/VPS, attempt writing to /etc/nginx/sites-available/
   const sitesAvailable = '/etc/nginx/sites-available';
   const sitesEnabled = '/etc/nginx/sites-enabled';
 
@@ -533,11 +531,8 @@ fastify.post('/api/system/cleanup', async (request, reply) => {
 
   setTimeout(() => {
     try {
-      // Clear in-memory session tokens
       sessionState.githubToken = null;
       sessionState.vpsIp = null;
-
-      // Clean temporary directories & logs
       const tmpFluid = '/tmp/fluid';
       if (fs.existsSync(tmpFluid)) {
         fs.rmSync(tmpFluid, { recursive: true, force: true });
@@ -545,7 +540,6 @@ fastify.post('/api/system/cleanup', async (request, reply) => {
       if (fs.existsSync('/tmp/fluid_server.log')) {
         fs.rmSync('/tmp/fluid_server.log', { force: true });
       }
-      // Remove any temporary deploy keys in /tmp
       const tmpFiles = fs.readdirSync('/tmp');
       tmpFiles.forEach((f) => {
         if (f.startsWith('fluid_deploy_key_')) {
@@ -558,69 +552,142 @@ fastify.post('/api/system/cleanup', async (request, reply) => {
 });
 
 // ----------------------------------------------------
-// WEBSOCKET TERMINAL EXECUTION (LIVE XTERM STREAMING)
+// WEBSOCKET TERMINAL — REAL-TIME STREAMING
 // ----------------------------------------------------
 fastify.register(async function (fastifyApp) {
   fastifyApp.get('/ws/terminal', { websocket: true }, (connection, req) => {
+    let activeProc = null;
+    let heartbeat = null;
+
+    const send = (obj) => {
+      try {
+        if (connection.socket.readyState === 1) {
+          connection.socket.send(JSON.stringify(obj));
+        }
+      } catch (e) {}
+    };
+
+    // Heartbeat: keeps WebSocket alive during long git clone / npm install
+    heartbeat = setInterval(() => {
+      try {
+        if (connection.socket.readyState === 1) {
+          connection.socket.send(JSON.stringify({ type: 'ping' }));
+        }
+      } catch (e) {}
+    }, 15000);
+
     connection.socket.on('message', (message) => {
       try {
         const parsed = JSON.parse(message.toString());
-        const { command, cwd } = parsed;
 
-        if (!command) {
-          connection.socket.send(JSON.stringify({ type: 'error', data: 'No command provided\n' }));
+        if (parsed.type === 'kill') {
+          if (activeProc) {
+            try { process.kill(-activeProc.pid, 'SIGTERM'); } catch (e) {
+              try { activeProc.kill('SIGTERM'); } catch (e2) {}
+            }
+            activeProc = null;
+          }
           return;
         }
 
-        const workDir = cwd && fs.existsSync(cwd) ? cwd : process.cwd();
-        connection.socket.send(JSON.stringify({ type: 'info', data: `\r\n\x1b[36m$ ${command}\x1b[0m\r\n` }));
+        if (parsed.type === 'pong') return;
 
-        const isWin = process.platform === 'win32';
-        const shell = isWin ? 'cmd.exe' : '/bin/bash';
-        const args = isWin ? ['/c', command] : ['-c', command];
+        const { command, cwd } = parsed;
+        if (!command) {
+          send({ type: 'error', data: 'No command provided\n' });
+          return;
+        }
 
-        const proc = spawn(shell, args, {
+        const workDir = cwd && fs.existsSync(cwd) ? cwd : '/tmp';
+        send({ type: 'stdout', data: `\r\n\x1b[36m$ ${command}\x1b[0m\r\n` });
+
+        // script -q gives us a real PTY on Linux — git/apt/npm will flush immediately
+        // -c runs the command, /dev/null discards the typescript log
+        // Fallback: stdbuf -oL -eL forces line-buffered output
+        const useScript = fs.existsSync('/usr/bin/script') || fs.existsSync('/bin/script');
+        let shellArgs;
+
+        if (useScript) {
+          // script creates a real PTY — output is NOT buffered
+          shellArgs = ['-c',
+            `script -q -c ${JSON.stringify(command)} /dev/null`
+          ];
+        } else {
+          // stdbuf fallback for systems without script
+          shellArgs = ['-c',
+            `stdbuf -oL -eL /bin/bash -c ${JSON.stringify(command)} 2>&1`
+          ];
+        }
+
+        const proc = spawn('/bin/bash', shellArgs, {
           cwd: workDir,
-          env: { ...process.env, PATH: process.env.PATH, FORCE_COLOR: '1' }
+          detached: true, // allow killing the whole process group
+          env: {
+            ...process.env,
+            TERM: 'xterm-256color',
+            FORCE_COLOR: '1',
+            PYTHONUNBUFFERED: '1',
+            GIT_TERMINAL_PROMPT: '0',
+            NPM_CONFIG_PROGRESS: 'true',
+            DEBIAN_FRONTEND: 'noninteractive',
+          }
         });
 
+        activeProc = proc;
+
         proc.stdout.on('data', (chunk) => {
-          connection.socket.send(JSON.stringify({ type: 'stdout', data: chunk.toString() }));
+          send({ type: 'stdout', data: chunk.toString() });
         });
 
         proc.stderr.on('data', (chunk) => {
-          connection.socket.send(JSON.stringify({ type: 'stderr', data: chunk.toString() }));
+          // Show stderr in yellow so progress lines are visible
+          send({ type: 'stdout', data: chunk.toString() });
         });
 
         proc.on('close', (code) => {
-          connection.socket.send(JSON.stringify({
-            type: 'exit',
-            code,
-            data: `\r\n\x1b[${code === 0 ? '32m✓ Process finished successfully' : '31m✗ Process exited with code ' + code}\x1b[0m\r\n`
-          }));
+          activeProc = null;
+          const exitCode = code ?? 0;
+          send({
+            type: 'stdout',
+            data: exitCode === 0
+              ? '\r\n\x1b[32m✓ Process finished successfully\x1b[0m\r\n'
+              : `\r\n\x1b[31m✗ Process exited with code ${exitCode}\x1b[0m\r\n`
+          });
+          // Single exit message with code for frontend state machine
+          send({ type: 'exit', code: exitCode });
         });
 
         proc.on('error', (err) => {
-          connection.socket.send(JSON.stringify({
-            type: 'error',
-            data: `\r\n\x1b[31mCommand execution error: ${err.message}\x1b[0m\r\n`
-          }));
+          activeProc = null;
+          send({ type: 'stdout', data: `\r\n\x1b[31mCommand error: ${err.message}\x1b[0m\r\n` });
+          send({ type: 'exit', code: 1 });
         });
+
       } catch (err) {
-        connection.socket.send(JSON.stringify({ type: 'error', data: `Invalid WS message: ${err.message}\n` }));
+        send({ type: 'error', data: `Invalid WS message: ${err.message}\n` });
+      }
+    });
+
+    connection.socket.on('close', () => {
+      clearInterval(heartbeat);
+      if (activeProc) {
+        try { process.kill(-activeProc.pid, 'SIGTERM'); } catch (e) {
+          try { activeProc.kill('SIGTERM'); } catch (e2) {}
+        }
+        activeProc = null;
       }
     });
   });
 });
+
 
 // -----------------------------------------------------------
 // STATIC FILE SERVER — registered LAST so all API routes win
 // -----------------------------------------------------------
 fastify.get('/*', async (request, reply) => {
   const outDir = findOutDir();
-  const reqPath = request.url.split('?')[0]; // strip query strings
+  const reqPath = request.url.split('?')[0];
 
-  // Try exact file match first
   const exactPath = path.join(outDir, reqPath);
   if (fs.existsSync(exactPath) && fs.statSync(exactPath).isFile()) {
     const ext = path.extname(exactPath).toLowerCase();
@@ -629,14 +696,12 @@ fastify.get('/*', async (request, reply) => {
     return reply.send(fs.readFileSync(exactPath));
   }
 
-  // Try with .html extension (Next.js export)
   const htmlPath = exactPath.endsWith('.html') ? exactPath : exactPath + '.html';
   if (fs.existsSync(htmlPath)) {
     reply.type('text/html; charset=utf-8');
     return reply.send(fs.readFileSync(htmlPath));
   }
 
-  // SPA fallback: serve index.html
   const indexPath = path.join(outDir, 'index.html');
   if (fs.existsSync(indexPath)) {
     reply.type('text/html; charset=utf-8');

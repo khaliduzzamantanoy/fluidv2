@@ -11,21 +11,42 @@ interface TerminalProps {
 
 export default function Terminal({ command, cwd, autoRun = true, onComplete }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
-  const xtermInstance = useRef<any>(null);
+  const xtermRef = useRef<any>(null);
+  const fitAddonRef = useRef<any>(null);
   const socketRef = useRef<WebSocket | null>(null);
-  const [isRunning, setIsRunning] = useState(false);
+  const queueRef = useRef<string[]>([]);
+  const rafRef = useRef<number | null>(null);
+
   const [status, setStatus] = useState<'idle' | 'running' | 'success' | 'failed'>('idle');
+  const [isRunning, setIsRunning] = useState(false);
+
+  // Drain the write queue on the next animation frame — prevents xterm render backpressure
+  const flushQueue = () => {
+    if (xtermRef.current && queueRef.current.length > 0) {
+      const batch = queueRef.current.splice(0);
+      batch.forEach((chunk) => xtermRef.current.write(chunk));
+    }
+    rafRef.current = null;
+  };
+
+  const writeToTerm = (data: string) => {
+    queueRef.current.push(data);
+    if (!rafRef.current) {
+      rafRef.current = requestAnimationFrame(flushQueue);
+    }
+  };
 
   useEffect(() => {
-    let term: any = null;
-    let fitAddon: any = null;
+    let term: any;
+    let fit: any;
 
-    async function initXterm() {
+    async function init() {
       if (!terminalRef.current) return;
-      const { Terminal } = await import('@xterm/xterm');
+
+      const { Terminal: XTerm } = await import('@xterm/xterm');
       const { FitAddon } = await import('@xterm/addon-fit');
 
-      term = new Terminal({
+      term = new XTerm({
         theme: {
           background: '#090d16',
           foreground: '#e2e8f0',
@@ -39,20 +60,28 @@ export default function Terminal({ command, cwd, autoRun = true, onComplete }: T
           magenta: '#a855f7',
           cyan: '#06b6d4',
           white: '#f8fafc',
+          brightBlack: '#334155',
+          brightGreen: '#4ade80',
+          brightYellow: '#facc15',
+          brightCyan: '#22d3ee',
         },
-        fontFamily: "'JetBrains Mono', monospace",
+        fontFamily: "'JetBrains Mono', 'Cascadia Code', monospace",
         fontSize: 13,
-        lineHeight: 1.3,
+        lineHeight: 1.35,
         cursorBlink: true,
         convertEol: true,
+        scrollback: 5000,
+        // Let xterm handle carriage return properly for progress lines
+        windowsMode: false,
       });
 
-      fitAddon = new FitAddon();
-      term.loadAddon(fitAddon);
-
+      fit = new FitAddon();
+      term.loadAddon(fit);
       term.open(terminalRef.current);
-      fitAddon.fit();
-      xtermInstance.current = term;
+      setTimeout(() => fit.fit(), 50);
+
+      xtermRef.current = term;
+      fitAddonRef.current = fit;
 
       term.writeln('\x1b[36mFLUID Terminal Session Initialized...\x1b[0m\r\n');
 
@@ -61,72 +90,86 @@ export default function Terminal({ command, cwd, autoRun = true, onComplete }: T
       }
     }
 
-    initXterm();
+    init();
 
     const handleResize = () => {
-      if (fitAddon) {
-        try { fitAddon.fit(); } catch (e) {}
+      if (fitAddonRef.current) {
+        try { fitAddonRef.current.fit(); } catch (e) {}
       }
     };
     window.addEventListener('resize', handleResize);
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      if (socketRef.current) {
-        socketRef.current.close();
-      }
-      if (term) {
-        term.dispose();
-      }
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (socketRef.current) socketRef.current.close();
+      if (term) term.dispose();
     };
   }, []);
 
   const runCommand = (cmdToRun: string, workDir?: string) => {
-    if (!cmdToRun) return;
+    if (!cmdToRun || !xtermRef.current) return;
+
     setIsRunning(true);
     setStatus('running');
+    writeToTerm(`\x1b[33mExecuting: ${cmdToRun}\x1b[0m\r\n`);
 
-    if (xtermInstance.current) {
-      xtermInstance.current.writeln(`\x1b[33mExecuting: ${cmdToRun}\x1b[0m\r\n`);
+    // Close any existing connection
+    if (socketRef.current) {
+      socketRef.current.close();
+      socketRef.current = null;
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname || 'localhost';
-    const wsUrl = `${protocol}//${host}:6776/ws/terminal`;
-
+    const wsUrl = `${protocol}//${window.location.hostname}:6776/ws/terminal`;
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
 
+    ws.binaryType = 'arraybuffer';
+
     ws.onopen = () => {
-      ws.send(JSON.stringify({ command: cmdToRun, cwd: workDir }));
+      ws.send(JSON.stringify({ command: cmdToRun, cwd: workDir || '/tmp' }));
     };
 
     ws.onmessage = (event) => {
       try {
-        const msg = JSON.parse(event.data);
-        if (xtermInstance.current && msg.data) {
-          xtermInstance.current.write(msg.data);
+        const msg = JSON.parse(
+          event.data instanceof ArrayBuffer
+            ? new TextDecoder().decode(event.data)
+            : event.data
+        );
+
+        // Write any data payload immediately
+        if (msg.data && (msg.type === 'stdout' || msg.type === 'stderr' || msg.type === 'info' || msg.type === 'error')) {
+          writeToTerm(msg.data);
         }
+
         if (msg.type === 'exit') {
+          // Also write the exit message if it has data
+          if (msg.data) writeToTerm(msg.data);
+          const success = Number(msg.code) === 0;
           setIsRunning(false);
-          const success = msg.code === 0;
           setStatus(success ? 'success' : 'failed');
           if (onComplete) onComplete(success);
+          ws.close();
         }
-      } catch (err) {
-        if (xtermInstance.current) {
-          xtermInstance.current.write(event.data);
-        }
+      } catch (_) {
+        // Raw string fallback
+        if (typeof event.data === 'string') writeToTerm(event.data);
       }
     };
 
     ws.onerror = () => {
-      if (xtermInstance.current) {
-        xtermInstance.current.writeln('\r\n\x1b[31m[WebSocket Connection Error]\x1b[0m');
-      }
+      writeToTerm('\r\n\x1b[31m[WebSocket Connection Error — is the server running on port 6776?]\x1b[0m\r\n');
       setIsRunning(false);
       setStatus('failed');
       if (onComplete) onComplete(false);
+    };
+
+    ws.onclose = () => {
+      if (status === 'running') {
+        setIsRunning(false);
+      }
     };
   };
 
@@ -142,8 +185,8 @@ export default function Terminal({ command, cwd, autoRun = true, onComplete }: T
         </div>
         <div className="flex items-center space-x-3">
           {status === 'running' && (
-            <span className="flex items-center text-xs text-brand-400 font-mono animate-pulse">
-              <span className="w-2 h-2 rounded-full bg-brand-400 mr-2 animate-ping" />
+            <span className="flex items-center text-xs text-sky-400 font-mono">
+              <span className="w-2 h-2 rounded-full bg-sky-400 mr-2 animate-ping" />
               Running...
             </span>
           )}
@@ -157,11 +200,11 @@ export default function Terminal({ command, cwd, autoRun = true, onComplete }: T
       </div>
 
       {/* Terminal Container */}
-      <div className="p-3 min-h-[260px] max-h-[400px]">
-        <div ref={terminalRef} className="w-full h-full min-h-[240px]" />
+      <div className="p-3 min-h-[300px] max-h-[480px] overflow-hidden">
+        <div ref={terminalRef} className="w-full h-full min-h-[280px]" />
       </div>
 
-      {/* Manual Retry Controls */}
+      {/* Retry */}
       {status === 'failed' && command && (
         <div className="p-3 bg-red-950/40 border-t border-red-900/50 flex items-center justify-between">
           <span className="text-xs text-red-300">Process exited with non-zero status.</span>
