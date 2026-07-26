@@ -30,6 +30,20 @@ if (!fs.existsSync(clientOutPath)) {
 await fastify.register(fastifyStatic, {
   root: clientOutPath,
   prefix: '/',
+  index: ['index.html'],
+  wildcard: false,
+});
+
+// Serve index.html for SPA client routes and GET /
+fastify.setNotFoundHandler((request, reply) => {
+  if (request.raw.url && (request.raw.url.startsWith('/api') || request.raw.url.startsWith('/ws'))) {
+    return reply.status(404).send({ success: false, error: 'API endpoint not found' });
+  }
+  const indexPath = path.join(clientOutPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    return reply.type('text/html').send(fs.readFileSync(indexPath, 'utf8'));
+  }
+  return reply.status(404).send({ success: false, error: 'Frontend static build not found' });
 });
 
 // In-memory state for active temporary session (NO DATABASE)
