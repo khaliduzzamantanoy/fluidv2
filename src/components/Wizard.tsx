@@ -5,6 +5,7 @@ import { Check, ShieldAlert, Cpu } from 'lucide-react';
 
 import Step1GitHubLogin from './steps/Step1GitHubLogin';
 import Step2RepoSelect from './steps/Step2RepoSelect';
+import Step3EnvConfig from './steps/Step3EnvConfig';
 import Step3DirSelect from './steps/Step3DirSelect';
 import Step4Detection from './steps/Step4Detection';
 import Step5Installation from './steps/Step5Installation';
@@ -23,6 +24,7 @@ export default function Wizard() {
     githubToken: '',
     selectedRepo: null,
     branch: 'main',
+    envVars: {},
     dirPath: '',
     detection: null,
     installCmd: 'npm install',
@@ -38,6 +40,7 @@ export default function Wizard() {
   const stepsList = [
     'GitHub Login',
     'Repository',
+    'Environment',
     'Directory',
     'Detection',
     'Installation',
@@ -57,7 +60,7 @@ export default function Wizard() {
 
   const goToNext = (fields?: any) => {
     if (fields) updateData(fields);
-    setCurrentStep((prev) => Math.min(prev + 1, 13));
+    setCurrentStep((prev) => Math.min(prev + 1, 14));
   };
 
   return (
@@ -80,7 +83,7 @@ export default function Wizard() {
         </div>
 
         <div className="hidden md:flex items-center space-x-2 font-mono text-xs text-gray-400">
-          <span>Step {currentStep} of 13</span>
+          <span>Step {currentStep} of 14</span>
           <span className="text-gray-600">|</span>
           <span className="text-brand-400 font-semibold">{stepsList[currentStep - 1]}</span>
         </div>
@@ -107,7 +110,7 @@ export default function Wizard() {
                 >
                   {isDone ? <Check className="w-4 h-4" /> : stepNum}
                 </div>
-                {stepNum < 13 && (
+                {stepNum < 14 && (
                   <div
                     className={`flex-1 h-0.5 mx-1 transition-all ${
                       stepNum < currentStep ? 'bg-emerald-500/80' : 'bg-gray-800'
@@ -139,6 +142,13 @@ export default function Wizard() {
           )}
 
           {currentStep === 3 && (
+            <Step3EnvConfig
+              dirPath={wizardData.dirPath || `/var/www/${wizardData.selectedRepo?.name || 'my-project'}`}
+              onNext={(data) => goToNext({ envVars: data.envVars })}
+            />
+          )}
+
+          {currentStep === 4 && (
             <Step3DirSelect
               selectedRepo={wizardData.selectedRepo}
               branch={wizardData.branch}
@@ -147,7 +157,7 @@ export default function Wizard() {
             />
           )}
 
-          {currentStep === 4 && (
+          {currentStep === 5 && (
             <Step4Detection
               dirPath={wizardData.dirPath}
               onNext={(data) =>
@@ -162,7 +172,7 @@ export default function Wizard() {
             />
           )}
 
-          {currentStep === 5 && (
+          {currentStep === 6 && (
             <Step5Installation
               dirPath={wizardData.dirPath}
               installCmd={wizardData.installCmd}
@@ -171,7 +181,7 @@ export default function Wizard() {
             />
           )}
 
-          {currentStep === 6 && (
+          {currentStep === 7 && (
             <Step6Runtime
               dirPath={wizardData.dirPath}
               repoName={wizardData.selectedRepo?.name}
@@ -181,7 +191,7 @@ export default function Wizard() {
             />
           )}
 
-          {currentStep === 7 && (
+          {currentStep === 8 && (
             <Step7Domain
               onNext={(data) =>
                 goToNext({ domain: data.domain, wwwDomain: data.wwwDomain })
@@ -189,7 +199,7 @@ export default function Wizard() {
             />
           )}
 
-          {currentStep === 8 && (
+          {currentStep === 9 && (
             <Step8IPDetect
               domain={wizardData.domain}
               wwwDomain={wizardData.wwwDomain}
@@ -197,7 +207,7 @@ export default function Wizard() {
             />
           )}
 
-          {currentStep === 9 && (
+          {currentStep === 10 && (
             <Step9DNSCheck
               domain={wizardData.domain}
               wwwDomain={wizardData.wwwDomain}
@@ -206,7 +216,7 @@ export default function Wizard() {
             />
           )}
 
-          {currentStep === 10 && (
+          {currentStep === 11 && (
             <Step10SSL
               domain={wizardData.domain}
               wwwDomain={wizardData.wwwDomain}
@@ -214,7 +224,7 @@ export default function Wizard() {
             />
           )}
 
-          {currentStep === 11 && (
+          {currentStep === 12 && (
             <Step11Nginx
               domain={wizardData.domain}
               wwwDomain={wizardData.wwwDomain}
@@ -223,7 +233,7 @@ export default function Wizard() {
             />
           )}
 
-          {currentStep === 12 && (
+          {currentStep === 13 && (
             <Step12FinalSetup
               selectedRepo={wizardData.selectedRepo}
               githubToken={wizardData.githubToken}
@@ -231,7 +241,7 @@ export default function Wizard() {
             />
           )}
 
-          {currentStep === 13 && (
+          {currentStep === 14 && (
             <Step13Completion
               repoName={wizardData.selectedRepo?.name}
               domain={wizardData.domain}
