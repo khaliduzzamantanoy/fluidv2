@@ -1,6 +1,5 @@
 import Fastify from 'fastify';
 import fastifyWebsocket from '@fastify/websocket';
-import fastifyStatic from '@fastify/static';
 import fastifyCors from '@fastify/cors';
 import { spawn } from 'child_process';
 import fs from 'fs';
@@ -18,13 +17,12 @@ const fastify = Fastify({ logger: true });
 await fastify.register(fastifyCors, { origin: true });
 await fastify.register(fastifyWebsocket);
 
-// Serve static Next.js frontend if built in ./out or ../out
+// Static file serving helper — API routes always take priority
 const findOutDir = () => {
   const possiblePaths = [
     path.join(__dirname, '../out'),
     path.join(__dirname, './out'),
     path.join(process.cwd(), 'out'),
-    path.join(__dirname, '../public'),
   ];
   for (const p of possiblePaths) {
     if (fs.existsSync(path.join(p, 'index.html'))) {
@@ -34,30 +32,21 @@ const findOutDir = () => {
   return path.join(process.cwd(), 'out');
 };
 
-const clientOutPath = findOutDir();
+const MIME_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js':   'application/javascript',
+  '.css':  'text/css',
+  '.json': 'application/json',
+  '.png':  'image/png',
+  '.jpg':  'image/jpeg',
+  '.svg':  'image/svg+xml',
+  '.ico':  'image/x-icon',
+  '.woff2':'font/woff2',
+  '.woff': 'font/woff',
+  '.ttf':  'font/ttf',
+  '.map':  'application/json',
+};
 
-if (!fs.existsSync(clientOutPath)) {
-  fs.mkdirSync(clientOutPath, { recursive: true });
-}
-
-await fastify.register(fastifyStatic, {
-  root: clientOutPath,
-  prefix: '/',
-});
-
-// SPA fallback for HTML pages, but STRICT JSON 404 for any /api/ endpoint
-fastify.setNotFoundHandler((request, reply) => {
-  const reqUrl = request.url || request.raw?.url || '';
-  if (reqUrl.includes('/api/') || reqUrl.startsWith('/api') || reqUrl.startsWith('/ws')) {
-    return reply.status(404).send({ success: false, error: `API endpoint not found: ${reqUrl}` });
-  }
-  const currentOut = findOutDir();
-  const indexPath = path.join(currentOut, 'index.html');
-  if (fs.existsSync(indexPath)) {
-    return reply.type('text/html').send(fs.readFileSync(indexPath, 'utf8'));
-  }
-  return reply.status(404).send({ success: false, error: 'Frontend static build not found' });
-});
 
 // In-memory state for active temporary session (NO DATABASE)
 const sessionState = {
@@ -622,6 +611,39 @@ fastify.register(async function (fastifyApp) {
       }
     });
   });
+});
+
+// -----------------------------------------------------------
+// STATIC FILE SERVER — registered LAST so all API routes win
+// -----------------------------------------------------------
+fastify.get('/*', async (request, reply) => {
+  const outDir = findOutDir();
+  const reqPath = request.url.split('?')[0]; // strip query strings
+
+  // Try exact file match first
+  const exactPath = path.join(outDir, reqPath);
+  if (fs.existsSync(exactPath) && fs.statSync(exactPath).isFile()) {
+    const ext = path.extname(exactPath).toLowerCase();
+    const mime = MIME_TYPES[ext] || 'application/octet-stream';
+    reply.type(mime);
+    return reply.send(fs.readFileSync(exactPath));
+  }
+
+  // Try with .html extension (Next.js export)
+  const htmlPath = exactPath.endsWith('.html') ? exactPath : exactPath + '.html';
+  if (fs.existsSync(htmlPath)) {
+    reply.type('text/html; charset=utf-8');
+    return reply.send(fs.readFileSync(htmlPath));
+  }
+
+  // SPA fallback: serve index.html
+  const indexPath = path.join(outDir, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    reply.type('text/html; charset=utf-8');
+    return reply.send(fs.readFileSync(indexPath));
+  }
+
+  return reply.status(404).send('<h1>FLUID: Frontend not built. Run npm run build first.</h1>');
 });
 
 const PORT = 6776;
