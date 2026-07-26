@@ -12,7 +12,7 @@ import https from 'https';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const fastify = Fastify({ logger: { level: 'warn' } });
+const fastify = Fastify({ logger: true });
 
 await fastify.register(fastifyCors, { origin: true });
 await fastify.register(fastifyWebsocket);
@@ -34,18 +34,19 @@ const findOutDir = () => {
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
-  '.js':   'application/javascript',
-  '.css':  'text/css',
+  '.js': 'application/javascript',
+  '.css': 'text/css',
   '.json': 'application/json',
-  '.png':  'image/png',
-  '.jpg':  'image/jpeg',
-  '.svg':  'image/svg+xml',
-  '.ico':  'image/x-icon',
-  '.woff2':'font/woff2',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
   '.woff': 'font/woff',
-  '.ttf':  'font/ttf',
-  '.map':  'application/json',
+  '.ttf': 'font/ttf',
+  '.map': 'application/json',
 };
+
 
 // In-memory state for active temporary session (NO DATABASE)
 const sessionState = {
@@ -58,7 +59,7 @@ function httpRequest(url, options = {}, data = null) {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(url);
     const lib = parsedUrl.protocol === 'https:' ? https : http;
-    
+
     const req = lib.request(url, options, (res) => {
       let body = '';
       res.on('data', (chunk) => (body += chunk));
@@ -297,7 +298,7 @@ fastify.post('/api/deploy/detect', async (request, reply) => {
         detection.startCmd = pkg.scripts?.start ? 'npm start' : 'node index.js';
         detection.port = 5000;
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   // Python Detection
@@ -369,7 +370,7 @@ fastify.get('/api/system/ip', async (request, reply) => {
           detectedIp = res.data.trim();
           break;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (!detectedIp) {
@@ -402,7 +403,7 @@ fastify.post('/api/system/check-dns', async (request, reply) => {
     const mainIps = await dns.resolve4(domain).catch(() => []);
     results.domain.resolved = mainIps;
     results.domain.matches = mainIps.includes(vpsIp);
-  } catch (e) {}
+  } catch (e) { }
 
   if (wwwDomain || domain) {
     const wwwHost = wwwDomain || `www.${domain}`;
@@ -410,7 +411,7 @@ fastify.post('/api/system/check-dns', async (request, reply) => {
       const wwwIps = await dns.resolve4(wwwHost).catch(() => []);
       results.wwwDomain.resolved = wwwIps;
       results.wwwDomain.matches = wwwIps.includes(vpsIp);
-    } catch (e) {}
+    } catch (e) { }
   }
 
   const overallSuccess = results.domain.matches || results.domain.resolved.length > 0;
@@ -432,7 +433,7 @@ fastify.post('/api/system/nginx', async (request, reply) => {
   }
 
   const serverNames = `${domain} ${wwwDomain || 'www.' + domain}`;
-  
+
   const nginxConfig = `
 server {
     listen 80;
@@ -453,6 +454,7 @@ server {
 }
 `.trim();
 
+  // If on Linux/VPS, attempt writing to /etc/nginx/sites-available/
   const sitesAvailable = '/etc/nginx/sites-available';
   const sitesEnabled = '/etc/nginx/sites-enabled';
 
@@ -491,7 +493,7 @@ fastify.post('/api/system/deploy-key', async (request, reply) => {
   const activeToken = token || sessionState.githubToken;
 
   const keyPath = `/tmp/fluid_deploy_key_${Date.now()}`;
-  
+
   return new Promise((resolve) => {
     const keygen = spawn('ssh-keygen', ['-t', 'ed25519', '-C', 'fluid-vps-deploy', '-f', keyPath, '-N', '']);
     keygen.on('close', async (code) => {
@@ -512,7 +514,7 @@ fastify.post('/api/system/deploy-key', async (request, reply) => {
               key: pubKey,
               read_only: true
             });
-          } catch (e) {}
+          } catch (e) { }
         }
 
         resolve(reply.send({ success: true, publicKey: pubKey }));
@@ -531,8 +533,11 @@ fastify.post('/api/system/cleanup', async (request, reply) => {
 
   setTimeout(() => {
     try {
+      // Clear in-memory session tokens
       sessionState.githubToken = null;
       sessionState.vpsIp = null;
+
+      // Clean temporary directories & logs
       const tmpFluid = '/tmp/fluid';
       if (fs.existsSync(tmpFluid)) {
         fs.rmSync(tmpFluid, { recursive: true, force: true });
@@ -540,154 +545,138 @@ fastify.post('/api/system/cleanup', async (request, reply) => {
       if (fs.existsSync('/tmp/fluid_server.log')) {
         fs.rmSync('/tmp/fluid_server.log', { force: true });
       }
+      // Remove any temporary deploy keys in /tmp
       const tmpFiles = fs.readdirSync('/tmp');
       tmpFiles.forEach((f) => {
         if (f.startsWith('fluid_deploy_key_')) {
-          try { fs.rmSync(path.join('/tmp', f), { force: true }); } catch (e) {}
+          try { fs.rmSync(path.join('/tmp', f), { force: true }); } catch (e) { }
         }
       });
-    } catch (e) {}
+    } catch (e) { }
     process.exit(0);
   }, 1500);
 });
 
 // ----------------------------------------------------
-// WEBSOCKET TERMINAL — REAL-TIME STREAMING
+// WEBSOCKET TERMINAL EXECUTION (LIVE XTERM PTY STREAMING)
 // ----------------------------------------------------
 fastify.register(async function (fastifyApp) {
   fastifyApp.get('/ws/terminal', { websocket: true }, (connection, req) => {
-    let activeProc = null;
-    let heartbeat = null;
+    let activePty = null;
 
-    const send = (obj) => {
+    const send = (type, data) => {
       try {
         if (connection.socket.readyState === 1) {
-          connection.socket.send(JSON.stringify(obj));
+          connection.socket.send(JSON.stringify({ type, data }));
         }
-      } catch (e) {}
+      } catch (e) { }
     };
 
-    // Heartbeat: keeps WebSocket alive during long git clone / npm install
-    heartbeat = setInterval(() => {
-      try {
-        if (connection.socket.readyState === 1) {
-          connection.socket.send(JSON.stringify({ type: 'ping' }));
-        }
-      } catch (e) {}
-    }, 15000);
-
-    connection.socket.on('message', (message) => {
+    connection.socket.on('message', async (message) => {
       try {
         const parsed = JSON.parse(message.toString());
 
-        if (parsed.type === 'kill') {
-          if (activeProc) {
-            try { process.kill(-activeProc.pid, 'SIGTERM'); } catch (e) {
-              try { activeProc.kill('SIGTERM'); } catch (e2) {}
-            }
-            activeProc = null;
-          }
+        // Resize PTY from frontend
+        if (parsed.type === 'resize' && activePty) {
+          try { activePty.resize(parsed.cols || 120, parsed.rows || 30); } catch (e) { }
           return;
         }
 
-        if (parsed.type === 'pong') return;
-
         const { command, cwd } = parsed;
         if (!command) {
-          send({ type: 'error', data: 'No command provided\n' });
+          send('error', 'No command provided\n');
           return;
         }
 
         const workDir = cwd && fs.existsSync(cwd) ? cwd : '/tmp';
-        send({ type: 'stdout', data: `\r\n\x1b[36m$ ${command}\x1b[0m\r\n` });
+        send('info', `\r\n\x1b[36m$ ${command}\x1b[0m\r\n`);
 
-        // script -q gives us a real PTY on Linux — git/apt/npm will flush immediately
-        // -c runs the command, /dev/null discards the typescript log
-        // Fallback: stdbuf -oL -eL forces line-buffered output
-        const useScript = fs.existsSync('/usr/bin/script') || fs.existsSync('/bin/script');
-        let shellArgs;
+        // Try node-pty for true PTY (if installed)
+        let usedPty = false;
+        try {
+          const pty = await import('node-pty').catch(() => null);
+          if (pty) {
+            activePty = pty.spawn('/bin/bash', ['-c', command], {
+              name: 'xterm-256color',
+              cols: 160,
+              rows: 40,
+              cwd: workDir,
+              env: {
+                ...process.env,
+                TERM: 'xterm-256color',
+                FORCE_COLOR: '3',
+                NPM_CONFIG_PROGRESS: 'true',
+              }
+            });
 
-        if (useScript) {
-          // script creates a real PTY — output is NOT buffered
-          shellArgs = ['-c',
-            `script -q -c ${JSON.stringify(command)} /dev/null`
-          ];
-        } else {
-          // stdbuf fallback for systems without script
-          shellArgs = ['-c',
-            `stdbuf -oL -eL /bin/bash -c ${JSON.stringify(command)} 2>&1`
-          ];
-        }
+            activePty.onData((data) => send('stdout', data));
 
-        const proc = spawn('/bin/bash', shellArgs, {
-          cwd: workDir,
-          detached: true, // allow killing the whole process group
-          env: {
-            ...process.env,
-            TERM: 'xterm-256color',
-            FORCE_COLOR: '1',
-            PYTHONUNBUFFERED: '1',
-            GIT_TERMINAL_PROMPT: '0',
-            NPM_CONFIG_PROGRESS: 'true',
-            DEBIAN_FRONTEND: 'noninteractive',
+            activePty.onExit(({ exitCode }) => {
+              activePty = null;
+              send('exit', exitCode === 0
+                ? '\r\n\x1b[32m✓ Process finished successfully\x1b[0m\r\n'
+                : `\r\n\x1b[31m✗ Process exited with code ${exitCode}\x1b[0m\r\n`
+              );
+              connection.socket.send(JSON.stringify({ type: 'exit', code: exitCode }));
+            });
+            usedPty = true;
           }
-        });
+        } catch (e) { }
 
-        activeProc = proc;
+        // Fallback: spawn with unbuffered env
+        if (!usedPty) {
+          const isWin = process.platform === 'win32';
+          const shell = isWin ? 'cmd.exe' : '/bin/bash';
+          const shellArgs = isWin ? ['/c', command] : ['-c', command];
 
-        proc.stdout.on('data', (chunk) => {
-          send({ type: 'stdout', data: chunk.toString() });
-        });
-
-        proc.stderr.on('data', (chunk) => {
-          // Show stderr in yellow so progress lines are visible
-          send({ type: 'stdout', data: chunk.toString() });
-        });
-
-        proc.on('close', (code) => {
-          activeProc = null;
-          const exitCode = code ?? 0;
-          send({
-            type: 'stdout',
-            data: exitCode === 0
-              ? '\r\n\x1b[32m✓ Process finished successfully\x1b[0m\r\n'
-              : `\r\n\x1b[31m✗ Process exited with code ${exitCode}\x1b[0m\r\n`
+          const proc = spawn(shell, shellArgs, {
+            cwd: workDir,
+            env: {
+              ...process.env,
+              FORCE_COLOR: '1',
+              PYTHONUNBUFFERED: '1',
+              NPM_CONFIG_PROGRESS: 'true',
+              DEBIAN_FRONTEND: 'noninteractive',
+            }
           });
-          // Single exit message with code for frontend state machine
-          send({ type: 'exit', code: exitCode });
-        });
 
-        proc.on('error', (err) => {
-          activeProc = null;
-          send({ type: 'stdout', data: `\r\n\x1b[31mCommand error: ${err.message}\x1b[0m\r\n` });
-          send({ type: 'exit', code: 1 });
-        });
+          proc.stdout.on('data', (chunk) => send('stdout', chunk.toString()));
+          proc.stderr.on('data', (chunk) => send('stderr', chunk.toString()));
 
+          proc.on('close', (code) => {
+            send('exit', code === 0
+              ? '\r\n\x1b[32m✓ Process finished successfully\x1b[0m\r\n'
+              : `\r\n\x1b[31m✗ Process exited with code ${code}\x1b[0m\r\n`
+            );
+            connection.socket.send(JSON.stringify({ type: 'exit', code }));
+          });
+
+          proc.on('error', (err) => {
+            send('error', `\r\n\x1b[31mCommand error: ${err.message}\x1b[0m\r\n`);
+          });
+        }
       } catch (err) {
-        send({ type: 'error', data: `Invalid WS message: ${err.message}\n` });
+        send('error', `Invalid WS message: ${err.message}\n`);
       }
     });
 
     connection.socket.on('close', () => {
-      clearInterval(heartbeat);
-      if (activeProc) {
-        try { process.kill(-activeProc.pid, 'SIGTERM'); } catch (e) {
-          try { activeProc.kill('SIGTERM'); } catch (e2) {}
-        }
-        activeProc = null;
+      if (activePty) {
+        try { activePty.kill(); } catch (e) { }
+        activePty = null;
       }
     });
   });
 });
-
 
 // -----------------------------------------------------------
 // STATIC FILE SERVER — registered LAST so all API routes win
 // -----------------------------------------------------------
 fastify.get('/*', async (request, reply) => {
   const outDir = findOutDir();
-  const reqPath = request.url.split('?')[0];
+  const reqPath = request.url.split('?')[0]; // strip query strings
 
+  // Try exact file match first
   const exactPath = path.join(outDir, reqPath);
   if (fs.existsSync(exactPath) && fs.statSync(exactPath).isFile()) {
     const ext = path.extname(exactPath).toLowerCase();
@@ -696,12 +685,14 @@ fastify.get('/*', async (request, reply) => {
     return reply.send(fs.readFileSync(exactPath));
   }
 
+  // Try with .html extension (Next.js export)
   const htmlPath = exactPath.endsWith('.html') ? exactPath : exactPath + '.html';
   if (fs.existsSync(htmlPath)) {
     reply.type('text/html; charset=utf-8');
     return reply.send(fs.readFileSync(htmlPath));
   }
 
+  // SPA fallback: serve index.html
   const indexPath = path.join(outDir, 'index.html');
   if (fs.existsSync(indexPath)) {
     reply.type('text/html; charset=utf-8');
