@@ -13,7 +13,6 @@ interface Step5Props {
 }
 
 export default function Step5Installation({ dirPath, installCmd, buildCmd, envVars, onNext }: Step5Props) {
-  const [phase, setPhase] = useState<'env' | 'install' | 'build' | 'completed'>('env');
   const [envSuccess, setEnvSuccess] = useState(false);
   const [installSuccess, setInstallSuccess] = useState(false);
   const [buildSuccess, setBuildSuccess] = useState(false);
@@ -24,23 +23,26 @@ export default function Step5Installation({ dirPath, installCmd, buildCmd, envVa
     ? `cd ${dirPath} && echo '${Object.entries(envVars).map(([k, v]) => `${k}=${v}`).join('\n')}' > .env`
     : null;
 
+  // Start at install phase if no env vars, otherwise start at env
+  const initialPhase = hasEnvVars ? 'env' : 'install';
+  const [currentPhase, setCurrentPhase] = useState<'env' | 'install' | 'build' | 'completed'>(initialPhase);
+
   const fullInstallCmd = `cd ${dirPath} && ${installCmd}`;
   const fullBuildCmd = buildCmd ? `cd ${dirPath} && ${buildCmd}` : '';
 
   const handleEnvComplete = (success: boolean) => {
     setEnvSuccess(success);
-    if (success) {
-      setPhase('install');
-    }
+    // Always continue to install phase after env
+    setCurrentPhase('install');
   };
 
   const handleInstallComplete = (success: boolean) => {
     setInstallSuccess(success);
     if (success) {
       if (buildCmd && buildCmd.trim().length > 0) {
-        setPhase('build');
+        setCurrentPhase('build');
       } else {
-        setPhase('completed');
+        setCurrentPhase('completed');
       }
     }
   };
@@ -48,7 +50,7 @@ export default function Step5Installation({ dirPath, installCmd, buildCmd, envVa
   const handleBuildComplete = (success: boolean) => {
     setBuildSuccess(success);
     if (success) {
-      setPhase('completed');
+      setCurrentPhase('completed');
     }
   };
 
@@ -69,37 +71,37 @@ export default function Step5Installation({ dirPath, installCmd, buildCmd, envVa
         <div className="flex items-center justify-center space-x-4">
           {hasEnvVars && (
             <div className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-mono border ${
-              phase === 'env'
+              currentPhase === 'env'
                 ? 'bg-brand-500/20 text-brand-400 border-brand-500/40 font-semibold animate-pulse'
                 : envSuccess
                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                 : 'bg-dark-card text-gray-500 border-gray-800'
             }`}>
-              {envSuccess ? <CheckCircle2 className="w-3 h-3" /> : phase === 'env' ? <Loader2 className="w-3 h-3 animate-spin" /> : <div className="w-3 h-3" />}
+              {envSuccess ? <CheckCircle2 className="w-3 h-3" /> : currentPhase === 'env' ? <Loader2 className="w-3 h-3 animate-spin" /> : <div className="w-3 h-3" />}
               <span>1. Create .env</span>
             </div>
           )}
 
           <div className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-mono border ${
-            phase === 'install'
+            currentPhase === 'install'
               ? 'bg-brand-500/20 text-brand-400 border-brand-500/40 font-semibold animate-pulse'
               : installSuccess
               ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
               : 'bg-dark-card text-gray-500 border-gray-800'
           }`}>
-            {installSuccess ? <CheckCircle2 className="w-3 h-3" /> : phase === 'install' ? <Loader2 className="w-3 h-3 animate-spin" /> : <div className="w-3 h-3" />}
+            {installSuccess ? <CheckCircle2 className="w-3 h-3" /> : currentPhase === 'install' ? <Loader2 className="w-3 h-3 animate-spin" /> : <div className="w-3 h-3" />}
             <span>{hasEnvVars ? '2' : '1'}. {installCmd}</span>
           </div>
 
           {buildCmd && (
             <div className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-mono border ${
-              phase === 'build'
+              currentPhase === 'build'
                 ? 'bg-brand-500/20 text-brand-400 border-brand-500/40 font-semibold animate-pulse'
                 : buildSuccess
                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                 : 'bg-dark-card text-gray-500 border-gray-800'
             }`}>
-              {buildSuccess ? <CheckCircle2 className="w-3 h-3" /> : phase === 'build' ? <Loader2 className="w-3 h-3 animate-spin" /> : <div className="w-3 h-3" />}
+              {buildSuccess ? <CheckCircle2 className="w-3 h-3" /> : currentPhase === 'build' ? <Loader2 className="w-3 h-3 animate-spin" /> : <div className="w-3 h-3" />}
               <span>{hasEnvVars ? '3' : '2'}. {buildCmd}</span>
             </div>
           )}
@@ -107,14 +109,14 @@ export default function Step5Installation({ dirPath, installCmd, buildCmd, envVa
 
         {/* Current Phase Status */}
         <div className="text-center">
-          {phase === 'env' && <span className="text-xs text-brand-400 font-medium">Creating .env file...</span>}
-          {phase === 'install' && <span className="text-xs text-brand-400 font-medium">Installing dependencies...</span>}
-          {phase === 'build' && <span className="text-xs text-brand-400 font-medium">Building application...</span>}
-          {phase === 'completed' && <span className="text-xs text-emerald-400 font-medium">Installation completed successfully!</span>}
+          {currentPhase === 'env' && <span className="text-xs text-brand-400 font-medium">Creating .env file...</span>}
+          {currentPhase === 'install' && <span className="text-xs text-brand-400 font-medium">Installing dependencies...</span>}
+          {currentPhase === 'build' && <span className="text-xs text-brand-400 font-medium">Building application...</span>}
+          {currentPhase === 'completed' && <span className="text-xs text-emerald-400 font-medium">Installation completed successfully!</span>}
         </div>
 
         {/* Live Terminal */}
-        {phase === 'env' && envCommand && (
+        {currentPhase === 'env' && envCommand && (
           <Terminal
             command={envCommand}
             cwd={dirPath}
@@ -122,7 +124,7 @@ export default function Step5Installation({ dirPath, installCmd, buildCmd, envVa
           />
         )}
 
-        {phase === 'install' && (
+        {currentPhase === 'install' && (
           <Terminal
             command={fullInstallCmd}
             cwd={dirPath}
@@ -130,7 +132,7 @@ export default function Step5Installation({ dirPath, installCmd, buildCmd, envVa
           />
         )}
 
-        {phase === 'build' && (
+        {currentPhase === 'build' && (
           <Terminal
             command={fullBuildCmd}
             cwd={dirPath}
@@ -138,7 +140,7 @@ export default function Step5Installation({ dirPath, installCmd, buildCmd, envVa
           />
         )}
 
-        {phase === 'completed' && (
+        {currentPhase === 'completed' && (
           <div className="p-6 glass-panel rounded-2xl border border-emerald-500/30 text-center space-y-4">
             <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto" />
             <h3 className="text-xl font-bold text-white">Build & Installation Completed!</h3>
