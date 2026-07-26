@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { Copy, Check } from 'lucide-react';
 
 interface TerminalProps {
   command?: string;
@@ -16,9 +17,11 @@ export default function Terminal({ command, cwd, autoRun = true, onComplete }: T
   const socketRef = useRef<WebSocket | null>(null);
   const queueRef = useRef<string[]>([]);
   const rafRef = useRef<number | null>(null);
+  const outputRef = useRef<string>('');
 
   const [status, setStatus] = useState<'idle' | 'running' | 'success' | 'failed'>('idle');
   const [isRunning, setIsRunning] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Drain the write queue on the next animation frame — prevents xterm render backpressure
   const flushQueue = () => {
@@ -30,9 +33,33 @@ export default function Terminal({ command, cwd, autoRun = true, onComplete }: T
   };
 
   const writeToTerm = (data: string) => {
+    outputRef.current += data;
     queueRef.current.push(data);
     if (!rafRef.current) {
       rafRef.current = requestAnimationFrame(flushQueue);
+    }
+  };
+
+  const copyOutput = async () => {
+    try {
+      await navigator.clipboard.writeText(outputRef.current);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = outputRef.current;
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (e) {
+        console.error('Fallback copy failed:', e);
+      }
+      document.body.removeChild(textArea);
     }
   };
 
@@ -164,6 +191,14 @@ export default function Terminal({ command, cwd, autoRun = true, onComplete }: T
           <span className="ml-2 text-xs font-mono text-gray-400">fluid-terminal ~ bash</span>
         </div>
         <div className="flex items-center space-x-3">
+          <button
+            onClick={copyOutput}
+            className="flex items-center space-x-1 text-xs text-gray-400 hover:text-white transition"
+            title="Copy terminal output"
+          >
+            {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+            <span>{copied ? 'Copied!' : 'Copy'}</span>
+          </button>
           {status === 'running' && (
             <span className="flex items-center text-xs text-sky-400 font-mono">
               <span className="w-2 h-2 rounded-full bg-sky-400 mr-2 animate-ping" />
