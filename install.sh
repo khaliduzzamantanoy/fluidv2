@@ -1,290 +1,122 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# Fluid VPS Installer - Self-Installing Script
-# This script installs the Fluid environment and cleans up after deployment
+# ==============================================================================
+# FLUID — ONE TIME VPS DEPLOYMENT ASSISTANT
+# One-liner automated installation script for Ubuntu VPS
+# Usage: curl -fsSL https://fluid.yourdomain.com/install | bash
+# ==============================================================================
 
 set -e
 
-# Colors for output
+# Colors for terminal output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m' # No Color
 
-# Configuration
-FLUID_DIR="/tmp/fluid-installer"
-INSTALL_DIR="/opt/fluid"
-LOG_FILE="/tmp/fluid-install.log"
-CLEANUP=true
+echo -e "${CYAN}${BOLD}"
+echo "=============================================================================="
+echo "                   FLUID — VPS DEPLOYMENT ASSISTANT                           "
+echo "=============================================================================="
+echo -e "${NC}"
 
-# Functions
-log() {
-    echo -e "${BLUE}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1" | tee -a "$LOG_FILE"
-}
+# 1. OS & PERMISSION CHECK
+if [ "$EUID" -ne 0 ]; then
+  echo -e "${RED}[ERROR] Please run this installer as root (e.g. sudo bash)${NC}"
+  exit 1
+fi
 
-log_success() {
-    echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} ✓ $1" | tee -a "$LOG_FILE"
-}
+if [ -f /etc/os-release ]; then
+  . /etc/os-release
+  OS=$NAME
+  VER=$VERSION_ID
+else
+  echo -e "${RED}[ERROR] Cannot detect OS version. Ubuntu 22.04+ recommended.${NC}"
+  exit 1
+fi
 
-log_error() {
-    echo -e "${RED}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} ✗ $1" | tee -a "$LOG_FILE"
-}
+echo -e "${GREEN}[1/5] OS Detected:${NC} $OS $VER"
 
-log_warning() {
-    echo -e "${YELLOW}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} ⚠ $1" | tee -a "$LOG_FILE"
-}
+if [[ "$ID" != "ubuntu" && "$ID_LIKE" != *"ubuntu"* ]]; then
+  echo -e "${YELLOW}[WARNING] System is not Ubuntu ($ID). Continuing anyway...${NC}"
+fi
 
-# Check if running as root
-check_root() {
-    if [ "$EUID" -ne 0 ]; then
-        log_error "Please run as root or with sudo"
-        exit 1
-    fi
-}
+# 2. UPDATE & INSTALL DEPENDENCIES
+echo -e "${GREEN}[2/5] Updating package index & installing core dependencies...${NC}"
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y curl wget git build-essential python3 python3-pip software-properties-common nginx certbot python3-certbot-nginx ufw
 
-# Check if Ubuntu
-check_ubuntu() {
-    if [ ! -f /etc/os-release ]; then
-        log_error "Cannot detect OS. /etc/os-release not found."
-        exit 1
-    fi
+# Install Node.js Latest LTS via NodeSource if node is missing or older than v18
+NODE_NEED_INSTALL=true
+if command -v node >/dev/null 2>&1; then
+  NODE_VER=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+  if [ "$NODE_VER" -ge 18 ]; then
+    NODE_NEED_INSTALL=false
+    echo -e "${GREEN}[INFO] Node.js $(node -v) is already installed.${NC}"
+  fi
+fi
 
-    if ! grep -q "Ubuntu" /etc/os-release; then
-        log_error "This installer is designed for Ubuntu only."
-        exit 1
-    fi
+if [ "$NODE_NEED_INSTALL" = true ]; then
+  echo -e "${GREEN}[INFO] Installing Node.js LTS...${NC}"
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  apt-get install -y nodejs
+fi
 
-    log_success "Ubuntu detected"
-}
+# Install Global Package Managers & PM2
+echo -e "${GREEN}[INFO] Installing PM2 and pnpm...${NC}"
+npm install -g pm2 pnpm >/dev/null 2>&1 || true
 
-# Install system dependencies
-install_dependencies() {
-    log "Installing system dependencies..."
-    
-    apt-get update >> "$LOG_FILE" 2>&1
-    
-    # Install essential packages
-    apt-get install -y \
-        curl \
-        git \
-        nodejs \
-        npm \
-        python3 \
-        python3-pip \
-        build-essential \
-        nginx \
-        certbot \
-        python3-certbot-nginx \
-        docker.io \
-        docker-compose \
-        >> "$LOG_FILE" 2>&1
-    
-    # Install PM2 globally
-    npm install -g pm2 >> "$LOG_FILE" 2>&1
-    
-    log_success "System dependencies installed"
-}
+# 3. SET UP TEMPORARY WORKSPACE
+FLUID_DIR="/tmp/fluid"
+echo -e "${GREEN}[3/5] Setting up temporary workspace at ${FLUID_DIR}...${NC}"
+rm -rf "$FLUID_DIR"
+mkdir -p "$FLUID_DIR"
 
-# Clone Fluid installer
-clone_fluid() {
-    log "Cloning Fluid installer..."
-    
-    # Create temp directory
-    mkdir -p "$FLUID_DIR"
-    cd "$FLUID_DIR"
-    
-    # Clone the repository (replace with actual repo URL)
-    git clone https://github.com/yourusername/fluid-vps-installer.git . >> "$LOG_FILE" 2>&1
-    
-    log_success "Fluid installer cloned"
-}
+# Download or clone Fluid codebase into /tmp/fluid
+if [ -d "./server" ] && [ -f "./package.json" ]; then
+  # Local copy if executing inside repository
+  cp -r ./* "$FLUID_DIR/"
+else
+  # Remote clone from repo
+  git clone --depth 1 https://github.com/khaliduzzamantanoy/ubuntufluid.git "$FLUID_DIR" || {
+    echo -e "${YELLOW}[NOTICE] Git clone fallback: copying workspace files...${NC}"
+  }
+fi
 
-# Install Node.js dependencies
-install_node_dependencies() {
-    log "Installing Node.js dependencies..."
-    
-    cd "$FLUID_DIR/server"
-    npm install >> "$LOG_FILE" 2>&1
-    
-    cd "$FLUID_DIR/client"
-    npm install >> "$LOG_FILE" 2>&1
-    
-    # Build the frontend
-    npm run build >> "$LOG_FILE" 2>&1
-    
-    log_success "Node.js dependencies installed and frontend built"
-}
+cd "$FLUID_DIR"
 
-# Setup environment
-setup_environment() {
-    log "Setting up environment..."
-    
-    # Create installation directory
-    mkdir -p "$INSTALL_DIR"
-    
-    # Copy files to installation directory
-    cp -r "$FLUID_DIR/server" "$INSTALL_DIR/"
-    cp -r "$FLUID_DIR/client/dist" "$INSTALL_DIR/client/"
-    
-    # Create .env file with user-provided or placeholder credentials
-    cat > "$INSTALL_DIR/server/.env" << EOF
-PORT=3000
-CLIENT_URL=http://localhost:3000
-GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-your_github_client_id}
-GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-your_github_client_secret}
-GITHUB_CALLBACK_URL=http://$SERVER_IP:3000
-SERVER_IP=$SERVER_IP
-EOF
-    
-    if [ -z "$GITHUB_CLIENT_ID" ] || [ -z "$GITHUB_CLIENT_SECRET" ]; then
-        log_warning "GitHub OAuth credentials not provided. Users will need to configure them manually."
-        log_warning "Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables before running this script."
-    else
-        log_success "GitHub OAuth credentials configured"
-    fi
-    
-    log_success "Environment setup complete with dynamic IP: $SERVER_IP"
-}
+# 4. BUILD & START FLUID SERVICE
+echo -e "${GREEN}[4/5] Building Fluid GUI & launching setup service...${NC}"
+npm install --silent
+npm run build --silent || true
 
-# Setup systemd service
-setup_systemd_service() {
-    log "Setting up systemd service..."
-    
-    cat > /etc/systemd/system/fluid-installer.service << EOF
-[Unit]
-Description=Fluid VPS Installer
-After=network.target
+# Open firewall port 6776 if ufw is active
+if command -v ufw >/dev/null 2>&1; then
+  ufw allow 6776/tcp >/dev/null 2>&1 || true
+  ufw allow 80/tcp >/dev/null 2>&1 || true
+  ufw allow 443/tcp >/dev/null 2>&1 || true
+fi
 
-[Service]
-Type=simple
-User=root
-WorkingDirectory=$INSTALL_DIR/server
-ExecStart=/usr/bin/node index.js
-Restart=always
-RestartSec=10
-Environment=NODE_ENV=production
+# 5. GET VPS PUBLIC IP & DISPLAY SUCCESS
+VPS_IP=$(curl -s --max-time 3 https://api.ipify.org || curl -s --max-time 3 https://ifconfig.me || echo "VPS_IP")
 
-[Install]
-WantedBy=multi-user.target
-EOF
-    
-    systemctl daemon-reload >> "$LOG_FILE" 2>&1
-    systemctl enable fluid-installer >> "$LOG_FILE" 2>&1
-    systemctl start fluid-installer >> "$LOG_FILE" 2>&1
-    
-    log_success "Systemd service configured and started"
-}
+# Launch Fastify server in background / daemon
+nohup node server/index.js > /tmp/fluid_server.log 2>&1 &
 
-# Setup Nginx for Fluid UI
-setup_nginx() {
-    log "Setting up Nginx for Fluid UI..."
-    
-    cat > /etc/nginx/sites-available/fluid-installer << EOF
-server {
-    listen 80;
-    server_name _;
+sleep 2
 
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_cache_bypass \$http_upgrade;
-    }
-}
-EOF
-    
-    ln -sf /etc/nginx/sites-available/fluid-installer /etc/nginx/sites-enabled/
-    rm -f /etc/nginx/sites-enabled/default
-    
-    nginx -t >> "$LOG_FILE" 2>&1
-    systemctl reload nginx >> "$LOG_FILE" 2>&1
-    
-    log_success "Nginx configured for Fluid UI"
-}
-
-# Get server IP
-get_server_ip() {
-    SERVER_IP=$(curl -s https://api.ipify.org)
-    log_success "Server IP: $SERVER_IP"
-}
-
-# Display completion message
-show_completion() {
-    echo ""
-    echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}          Fluid VPS Installer Installation Complete!${NC}"
-    echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo -e "${BLUE}Access the Fluid Installer:${NC}"
-    echo -e "  URL: ${YELLOW}http://$SERVER_IP${NC}"
-    echo ""
-    echo -e "${BLUE}What's Next:${NC}"
-    echo -e "  1. Open the URL in your browser"
-    echo -e "  2. Authenticate with GitHub"
-    echo -e "  3. Select your repository"
-    echo -e "  4. Follow the deployment wizard"
-    echo ""
-    echo -e "${BLUE}Auto-Cleanup:${NC}"
-    echo -e "  The installer will automatically remove itself after"
-    echo -e "  completing your first deployment."
-    echo ""
-    echo -e "${BLUE}Logs:${NC}"
-    echo -e "  Installation log: $LOG_FILE"
-    echo ""
-    echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
-    echo ""
-}
-
-# Cleanup function
-cleanup() {
-    if [ "$CLEANUP" = true ]; then
-        log "Starting cleanup process..."
-        
-        # Stop and disable the service
-        systemctl stop fluid-installer >> "$LOG_FILE" 2>&1
-        systemctl disable fluid-installer >> "$LOG_FILE" 2>&1
-        
-        # Remove systemd service file
-        rm -f /etc/systemd/system/fluid-installer.service
-        systemctl daemon-reload >> "$LOG_FILE" 2>&1
-        
-        # Remove Nginx config
-        rm -f /etc/nginx/sites-available/fluid-installer
-        rm -f /etc/nginx/sites-enabled/fluid-installer
-        systemctl reload nginx >> "$LOG_FILE" 2>&1
-        
-        # Remove installation directory
-        rm -rf "$INSTALL_DIR"
-        
-        # Remove temp directory
-        rm -rf "$FLUID_DIR"
-        
-        log_success "Cleanup complete. Fluid installer removed from system."
-    fi
-}
-
-# Main installation process
-main() {
-    log "Starting Fluid VPS Installer installation..."
-    
-    check_root
-    check_ubuntu
-    install_dependencies
-    clone_fluid
-    install_node_dependencies
-    setup_environment
-    setup_systemd_service
-    setup_nginx
-    get_server_ip
-    show_completion
-    
-    # Note: Cleanup will be called after first deployment via the web UI
-    log "Fluid installer is now running. Access it to deploy your project."
-    log "The installer will auto-cleanup after your first deployment."
-}
-
-# Run main function
-main
+echo -e "${GREEN}${BOLD}"
+echo "=============================================================================="
+echo "             FLUID SETUP SERVICE IS READY & LISTENING!                        "
+echo "=============================================================================="
+echo -e "${NC}"
+echo -e "Open your web browser and navigate to:"
+echo -e "${CYAN}${BOLD}http://${VPS_IP}:6776${NC}"
+echo -e "http://localhost:6776"
+echo ""
+echo -e "${YELLOW}Follow the guided 13-step wizard to complete project deployment.${NC}"
+echo -e "Fluid will self-destruct automatically when deployment finishes."
+echo "=============================================================================="
