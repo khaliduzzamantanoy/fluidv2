@@ -95,7 +95,7 @@ cd "$FLUID_DIR"
 # 4. BUILD & START FLUID SERVICE
 echo -e "${GREEN}[4/5] Building Fluid GUI & launching setup service...${NC}"
 npm install --silent
-npm run build --silent || true
+npm run build || true
 
 # Open firewall port 6776 if ufw is active
 if command -v ufw >/dev/null 2>&1; then

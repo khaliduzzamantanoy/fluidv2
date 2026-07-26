@@ -19,9 +19,22 @@ await fastify.register(fastifyCors, { origin: true });
 await fastify.register(fastifyWebsocket);
 
 // Serve static Next.js frontend if built in ./out or ../out
-const clientOutPath = fs.existsSync(path.join(__dirname, '../out'))
-  ? path.join(__dirname, '../out')
-  : path.join(__dirname, './public');
+const findOutDir = () => {
+  const possiblePaths = [
+    path.join(__dirname, '../out'),
+    path.join(__dirname, './out'),
+    path.join(process.cwd(), 'out'),
+    path.join(__dirname, '../public'),
+  ];
+  for (const p of possiblePaths) {
+    if (fs.existsSync(path.join(p, 'index.html'))) {
+      return p;
+    }
+  }
+  return path.join(process.cwd(), 'out');
+};
+
+const clientOutPath = findOutDir();
 
 if (!fs.existsSync(clientOutPath)) {
   fs.mkdirSync(clientOutPath, { recursive: true });
@@ -39,7 +52,8 @@ fastify.setNotFoundHandler((request, reply) => {
   if (request.raw.url && (request.raw.url.startsWith('/api') || request.raw.url.startsWith('/ws'))) {
     return reply.status(404).send({ success: false, error: 'API endpoint not found' });
   }
-  const indexPath = path.join(clientOutPath, 'index.html');
+  const currentOut = findOutDir();
+  const indexPath = path.join(currentOut, 'index.html');
   if (fs.existsSync(indexPath)) {
     return reply.type('text/html').send(fs.readFileSync(indexPath, 'utf8'));
   }
