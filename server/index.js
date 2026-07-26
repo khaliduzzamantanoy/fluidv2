@@ -558,6 +558,17 @@ fastify.post('/api/system/cleanup', async (request, reply) => {
 });
 
 // ----------------------------------------------------
+// WEBSOCKET CONNECTION TEST
+// ----------------------------------------------------
+fastify.get('/ws-test', (request, reply) => {
+  reply.send({ 
+    status: 'WebSocket endpoint available',
+    endpoint: '/ws/terminal',
+    serverTime: new Date().toISOString()
+  });
+});
+
+// ----------------------------------------------------
 // REST API COMMAND EXECUTION (FALLBACK/DEBUGGING)
 // ----------------------------------------------------
 fastify.post('/api/execute', async (request, reply) => {
@@ -812,6 +823,8 @@ try {
   console.log(`\n==================================================`);
   console.log(` FLUID VPS DEPLOYMENT ASSISTANT RUNNING`);
   console.log(` Open Web GUI: http://localhost:${PORT}`);
+  console.log(` WebSocket Endpoint: ws://localhost:${PORT}/ws/terminal`);
+  console.log(` REST API: http://localhost:${PORT}/api/execute`);
   console.log(`==================================================\n`);
 } catch (err) {
   fastify.log.error(err);
