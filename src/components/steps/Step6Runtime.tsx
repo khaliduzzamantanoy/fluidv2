@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Server, ArrowRight, ShieldCheck, Play } from 'lucide-react';
+import { Server, ArrowRight, ShieldCheck, Play, CheckCircle, AlertTriangle } from 'lucide-react';
 import Terminal from '../Terminal';
 
 interface Step6Props {
@@ -15,11 +15,43 @@ interface Step6Props {
 export default function Step6Runtime({ dirPath, repoName, startCmd, port, onNext }: Step6Props) {
   const [started, setStarted] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [portCheck, setPortCheck] = useState<{ listening: boolean; message: string } | null>(null);
 
   const cleanRepoName = repoName ? repoName.replace(/[^a-zA-Z0-9_-]/g, '') : 'my-app';
   
   // Format pm2 start command properly - use the detected start command
-  const pm2Command = `cd ${dirPath} && pm2 delete ${cleanRepoName} || true && pm2 start "${startCmd}" --name "${cleanRepoName}" && pm2 save && pm2 startup`;
+  // Redirect stderr to suppress expected error messages
+  const pm2Command = `cd ${dirPath} && pm2 delete ${cleanRepoName} 2>/dev/null || true && pm2 start "${startCmd}" --name "${cleanRepoName}" && pm2 save && pm2 startup`;
+
+  const checkPortListening = async () => {
+    try {
+      const res = await fetch('/api/check-port', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ port })
+      });
+      const data = await res.json();
+      setPortCheck({
+        listening: data.inUse,
+        message: data.message
+      });
+    } catch (err: any) {
+      setPortCheck({
+        listening: false,
+        message: 'Could not check port status'
+      });
+    }
+  };
+
+  const handlePm2Complete = (isOk: boolean) => {
+    setSuccess(isOk);
+    if (isOk) {
+      // Check if the port is actually listening after PM2 starts
+      setTimeout(() => {
+        checkPortListening();
+      }, 3000); // Wait 3 seconds for app to start
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -62,10 +94,30 @@ export default function Step6Runtime({ dirPath, repoName, startCmd, port, onNext
             <Terminal
               command={pm2Command}
               cwd={dirPath}
-              onComplete={(isOk) => setSuccess(isOk)}
+              onComplete={handlePm2Complete}
             />
 
-            {success && (
+            {portCheck && (
+              <div className={`p-4 rounded-xl space-y-3 ${
+                portCheck.listening 
+                  ? 'bg-emerald-950/40 border border-emerald-800/60' 
+                  : 'bg-red-950/40 border border-red-800/60'
+              }`}>
+                <div className={`flex items-center space-x-2 text-sm font-semibold ${
+                  portCheck.listening ? 'text-emerald-400' : 'text-red-400'
+                }`}>
+                  {portCheck.listening ? <CheckCircle className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
+                  <span>{portCheck.message}</span>
+                </div>
+                {!portCheck.listening && (
+                  <p className="text-xs text-red-300">
+                    The application may not have started correctly. Check the PM2 logs with: <code className="bg-red-900/50 px-1 rounded">pm2 logs {cleanRepoName}</code>
+                  </p>
+                )}
+              </div>
+            )}
+
+            {success && portCheck?.listening && (
               <div className="p-4 bg-emerald-950/40 border border-emerald-800/60 rounded-xl space-y-3">
                 <div className="flex items-center space-x-2 text-emerald-400 text-sm font-semibold">
                   <ShieldCheck className="w-5 h-5" />
