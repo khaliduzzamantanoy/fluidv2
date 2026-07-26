@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { Check, ShieldAlert, Cpu } from 'lucide-react';
 
 import Step1GitHubLogin from './steps/Step1GitHubLogin';
@@ -88,7 +87,7 @@ export default function Wizard() {
       </header>
 
       {/* Stepper Progress Bar */}
-      <div className="py-6 overflow-x-auto no-scrollbar">
+      <div className="py-6 overflow-x-auto">
         <div className="flex items-center space-x-1 min-w-[700px]">
           {stepsList.map((name, idx) => {
             const stepNum = idx + 1;
@@ -121,133 +120,125 @@ export default function Wizard() {
         </div>
       </div>
 
-      {/* Main Step Container with Animations */}
-      <main className="flex-1 my-4">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={currentStep}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.25 }}
-          >
-            {currentStep === 1 && (
-              <Step1GitHubLogin
-                onNext={(data) => goToNext({ githubToken: data.githubToken })}
-              />
-            )}
+      {/* Main Step Container */}
+      <main className="flex-1 my-4 transition-all duration-300">
+        <div className="w-full">
+          {currentStep === 1 && (
+            <Step1GitHubLogin
+              onNext={(data) => goToNext({ githubToken: data.githubToken })}
+            />
+          )}
 
-            {currentStep === 2 && (
-              <Step2RepoSelect
-                githubToken={wizardData.githubToken}
-                onNext={(data) =>
-                  goToNext({ selectedRepo: data.selectedRepo, branch: data.branch })
-                }
-              />
-            )}
+          {currentStep === 2 && (
+            <Step2RepoSelect
+              githubToken={wizardData.githubToken}
+              onNext={(data) =>
+                goToNext({ selectedRepo: data.selectedRepo, branch: data.branch })
+              }
+            />
+          )}
 
-            {currentStep === 3 && (
-              <Step3DirSelect
-                selectedRepo={wizardData.selectedRepo}
-                branch={wizardData.branch}
-                githubToken={wizardData.githubToken}
-                onNext={(data) => goToNext({ dirPath: data.dirPath })}
-              />
-            )}
+          {currentStep === 3 && (
+            <Step3DirSelect
+              selectedRepo={wizardData.selectedRepo}
+              branch={wizardData.branch}
+              githubToken={wizardData.githubToken}
+              onNext={(data) => goToNext({ dirPath: data.dirPath })}
+            />
+          )}
 
-            {currentStep === 4 && (
-              <Step4Detection
-                dirPath={wizardData.dirPath}
-                onNext={(data) =>
-                  goToNext({
-                    detection: data.detection,
-                    installCmd: data.installCmd,
-                    buildCmd: data.buildCmd,
-                    startCmd: data.startCmd,
-                    port: data.port,
-                  })
-                }
-              />
-            )}
+          {currentStep === 4 && (
+            <Step4Detection
+              dirPath={wizardData.dirPath}
+              onNext={(data) =>
+                goToNext({
+                  detection: data.detection,
+                  installCmd: data.installCmd,
+                  buildCmd: data.buildCmd,
+                  startCmd: data.startCmd,
+                  port: data.port,
+                })
+              }
+            />
+          )}
 
-            {currentStep === 5 && (
-              <Step5Installation
-                dirPath={wizardData.dirPath}
-                installCmd={wizardData.installCmd}
-                buildCmd={wizardData.buildCmd}
-                onNext={() => goToNext()}
-              />
-            )}
+          {currentStep === 5 && (
+            <Step5Installation
+              dirPath={wizardData.dirPath}
+              installCmd={wizardData.installCmd}
+              buildCmd={wizardData.buildCmd}
+              onNext={() => goToNext()}
+            />
+          )}
 
-            {currentStep === 6 && (
-              <Step6Runtime
-                dirPath={wizardData.dirPath}
-                repoName={wizardData.selectedRepo?.name}
-                startCmd={wizardData.startCmd}
-                port={wizardData.port}
-                onNext={() => goToNext()}
-              />
-            )}
+          {currentStep === 6 && (
+            <Step6Runtime
+              dirPath={wizardData.dirPath}
+              repoName={wizardData.selectedRepo?.name}
+              startCmd={wizardData.startCmd}
+              port={wizardData.port}
+              onNext={() => goToNext()}
+            />
+          )}
 
-            {currentStep === 7 && (
-              <Step7Domain
-                onNext={(data) =>
-                  goToNext({ domain: data.domain, wwwDomain: data.wwwDomain })
-                }
-              />
-            )}
+          {currentStep === 7 && (
+            <Step7Domain
+              onNext={(data) =>
+                goToNext({ domain: data.domain, wwwDomain: data.wwwDomain })
+              }
+            />
+          )}
 
-            {currentStep === 8 && (
-              <Step8IPDetect
-                domain={wizardData.domain}
-                wwwDomain={wizardData.wwwDomain}
-                onNext={(vpsIp) => goToNext({ vpsIp })}
-              />
-            )}
+          {currentStep === 8 && (
+            <Step8IPDetect
+              domain={wizardData.domain}
+              wwwDomain={wizardData.wwwDomain}
+              onNext={(vpsIp) => goToNext({ vpsIp })}
+            />
+          )}
 
-            {currentStep === 9 && (
-              <Step9DNSCheck
-                domain={wizardData.domain}
-                wwwDomain={wizardData.wwwDomain}
-                expectedIp={wizardData.vpsIp}
-                onNext={() => goToNext()}
-              />
-            )}
+          {currentStep === 9 && (
+            <Step9DNSCheck
+              domain={wizardData.domain}
+              wwwDomain={wizardData.wwwDomain}
+              expectedIp={wizardData.vpsIp}
+              onNext={() => goToNext()}
+            />
+          )}
 
-            {currentStep === 10 && (
-              <Step10SSL
-                domain={wizardData.domain}
-                wwwDomain={wizardData.wwwDomain}
-                onNext={(sslConfig) => goToNext({ sslConfig })}
-              />
-            )}
+          {currentStep === 10 && (
+            <Step10SSL
+              domain={wizardData.domain}
+              wwwDomain={wizardData.wwwDomain}
+              onNext={(sslConfig) => goToNext({ sslConfig })}
+            />
+          )}
 
-            {currentStep === 11 && (
-              <Step11Nginx
-                domain={wizardData.domain}
-                wwwDomain={wizardData.wwwDomain}
-                port={wizardData.port}
-                onNext={() => goToNext()}
-              />
-            )}
+          {currentStep === 11 && (
+            <Step11Nginx
+              domain={wizardData.domain}
+              wwwDomain={wizardData.wwwDomain}
+              port={wizardData.port}
+              onNext={() => goToNext()}
+            />
+          )}
 
-            {currentStep === 12 && (
-              <Step12FinalSetup
-                selectedRepo={wizardData.selectedRepo}
-                githubToken={wizardData.githubToken}
-                onNext={() => goToNext()}
-              />
-            )}
+          {currentStep === 12 && (
+            <Step12FinalSetup
+              selectedRepo={wizardData.selectedRepo}
+              githubToken={wizardData.githubToken}
+              onNext={() => goToNext()}
+            />
+          )}
 
-            {currentStep === 13 && (
-              <Step13Completion
-                repoName={wizardData.selectedRepo?.name}
-                domain={wizardData.domain}
-                port={wizardData.port}
-              />
-            )}
-          </motion.div>
-        </AnimatePresence>
+          {currentStep === 13 && (
+            <Step13Completion
+              repoName={wizardData.selectedRepo?.name}
+              domain={wizardData.domain}
+              port={wizardData.port}
+            />
+          )}
+        </div>
       </main>
 
       {/* Footer */}
