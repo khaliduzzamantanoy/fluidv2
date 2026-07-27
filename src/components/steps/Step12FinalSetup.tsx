@@ -18,6 +18,8 @@ export default function Step12FinalSetup({ selectedRepo, githubToken, onNext }: 
 
   const handleFinalize = async () => {
     setProcessing(true);
+    let generatedKey: string | undefined = undefined;
+    
     if (generateDeployKey && selectedRepo) {
       try {
         const [owner, repo] = selectedRepo.fullName.split('/');
@@ -27,14 +29,20 @@ export default function Step12FinalSetup({ selectedRepo, githubToken, onNext }: 
           body: JSON.stringify({ owner, repo, token: githubToken })
         });
         const data = await res.json();
+        console.log('Deploy key response:', data);
         if (data.success && data.publicKey) {
+          generatedKey = data.publicKey;
           setSshKey(data.publicKey);
+          console.log('SSH key set:', data.publicKey);
         }
         setKeyDone(true);
-      } catch (e) {}
+      } catch (e) {
+        console.error('Deploy key error:', e);
+      }
     }
     setProcessing(false);
-    onNext({ sshKey });
+    console.log('Calling onNext with sshKey:', generatedKey);
+    onNext({ sshKey: generatedKey });
   };
 
   return (
