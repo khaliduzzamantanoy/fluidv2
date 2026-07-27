@@ -85,15 +85,20 @@ export default function Step4Detection({ dirPath, onNext }: Step4Props) {
         body: JSON.stringify({ port: portToKill })
       });
       const data = await res.json();
-      if (data.success) {
-        // Wait a moment and then recheck the port
+      if (data.success && data.killed) {
+        // Port successfully killed, recheck after a moment
         setTimeout(() => {
           checkPortAvailability(portToKill);
-        }, 1000);
+        }, 1500);
+      } else {
+        // Failed to kill, show error and recheck
+        console.error('Failed to kill process:', data.message);
+        setTimeout(() => {
+          checkPortAvailability(portToKill);
+        }, 1500);
       }
     } catch (err: any) {
       console.error('Failed to kill process:', err);
-    } finally {
       setCheckingPort(false);
     }
   };
@@ -201,15 +206,6 @@ export default function Step4Detection({ dirPath, onNext }: Step4Props) {
                   {portCheck && (
                     <div className={`mt-1 text-xs ${portCheck.inUse ? 'text-red-400' : 'text-emerald-400'}`}>
                       {portCheck.message}
-                      {portCheck.inUse && (
-                        <button
-                          onClick={() => killProcessOnPort(port)}
-                          disabled={checkingPort}
-                          className="ml-2 px-2 py-1 bg-red-600 hover:bg-red-500 text-white text-xs font-semibold rounded transition disabled:opacity-50"
-                        >
-                          {checkingPort ? 'Killing...' : 'Kill Process'}
-                        </button>
-                      )}
                     </div>
                   )}
                 </div>

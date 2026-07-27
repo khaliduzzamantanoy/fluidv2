@@ -635,9 +635,26 @@ fastify.post('/api/kill-port', async (request, reply) => {
 
   try {
     const isWin = process.platform === 'win32';
-    const killCommand = isWin 
-      ? `for /f "tokens=5" %a in ('netstat -ano ^| findstr :${port}') do taskkill /F /PID %a`
-      : `lsof -ti:${port} | xargs kill -9 2>/dev/null || fuser -k ${port}/tcp 2>/dev/null`;
+    let killCommand;
+    
+    if (isWin) {
+      killCommand = `for /f "tokens=5" %a in ('netstat -ano ^| findstr :${port}') do taskkill /F /PID %a`;
+    } else {
+      // Try multiple methods to kill the process
+      killCommand = `
+        # Method 1: lsof
+        lsof -ti:${port} 2>/dev/null | xargs -r kill -9 2>/dev/null
+        # Method 2: fuser
+        fuser -k ${port}/tcp 2>/dev/null
+        # Method 3: netstat + kill
+        PIDS=$(netstat -tlnp 2>/dev/null | grep :${port} | awk '{print $7}' | cut -d'/' -f1)
+        if [ ! -z "$PIDS" ]; then
+          for pid in $PIDS; do
+            kill -9 $pid 2>/dev/null
+          done
+        fi
+      `;
+    }
 
     const proc = spawn('bash', ['-c', killCommand]);
     
@@ -656,13 +673,37 @@ fastify.post('/api/kill-port', async (request, reply) => {
       proc.on('close', (code) => resolve(code));
     });
 
+    // Wait a moment for the process to actually be killed
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Check if port is now free
+    const checkCommand = isWin 
+      ? `netstat -ano | findstr :${port}`
+      : `lsof -i :${port} 2>/dev/null || netstat -tlnp 2>/dev/null | grep :${port}`;
+
+    const checkProc = spawn('bash', ['-c', checkCommand]);
+    let checkOutput = '';
+    
+    checkProc.stdout.on('data', (chunk) => {
+      checkOutput += chunk.toString();
+    });
+
+    await new Promise(resolve => {
+      checkProc.on('close', () => resolve());
+    });
+
+    const isPortFree = checkOutput.trim().length === 0;
+
     return reply.send({
       success: true,
       port: port,
+      killed: isPortFree,
       exitCode,
       stdout,
       stderr,
-      message: `Attempted to kill process on port ${port}`
+      message: isPortFree 
+        ? `Successfully killed process on port ${port}` 
+        : `Attempted to kill process on port ${port}, but port may still be in use`
     });
   } catch (err) {
     console.log('Kill port error:', err.message);
