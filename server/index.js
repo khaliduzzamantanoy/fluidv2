@@ -640,18 +640,39 @@ fastify.post('/api/kill-port', async (request, reply) => {
     if (isWin) {
       killCommand = `for /f "tokens=5" %a in ('netstat -ano ^| findstr :${port}') do taskkill /F /PID %a`;
     } else {
-      // Try multiple methods to kill the process
+      // Try multiple methods to kill the process - more aggressive
       killCommand = `
-        # Method 1: lsof
-        lsof -ti:${port} 2>/dev/null | xargs -r kill -9 2>/dev/null
-        # Method 2: fuser
-        fuser -k ${port}/tcp 2>/dev/null
-        # Method 3: netstat + kill
+        # Method 1: lsof with sudo if available
+        if command -v sudo &> /dev/null; then
+          sudo lsof -ti:${port} 2>/dev/null | xargs -r sudo kill -9 2>/dev/null
+        else
+          lsof -ti:${port} 2>/dev/null | xargs -r kill -9 2>/dev/null
+        fi
+        
+        # Method 2: fuser with sudo if available
+        if command -v sudo &> /dev/null; then
+          sudo fuser -k ${port}/tcp 2>/dev/null
+        else
+          fuser -k ${port}/tcp 2>/dev/null
+        fi
+        
+        # Method 3: netstat + kill with sudo if available
         PIDS=$(netstat -tlnp 2>/dev/null | grep :${port} | awk '{print $7}' | cut -d'/' -f1)
         if [ ! -z "$PIDS" ]; then
           for pid in $PIDS; do
-            kill -9 $pid 2>/dev/null
+            if command -v sudo &> /dev/null; then
+              sudo kill -9 $pid 2>/dev/null
+            else
+              kill -9 $pid 2>/dev/null
+            fi
           done
+        fi
+        
+        # Method 4: pkill as last resort
+        if command -v sudo &> /dev/null; then
+          sudo pkill -f ":${port}" 2>/dev/null
+        else
+          pkill -f ":${port}" 2>/dev/null
         fi
       `;
     }
@@ -673,8 +694,12 @@ fastify.post('/api/kill-port', async (request, reply) => {
       proc.on('close', (code) => resolve(code));
     });
 
-    // Wait a moment for the process to actually be killed
-    await new Promise(resolve => setTimeout(resolve, 500));
+    console.log('Kill command exit code:', exitCode);
+    console.log('Kill stdout:', stdout);
+    console.log('Kill stderr:', stderr);
+
+    // Wait longer for the process to actually be killed
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Check if port is now free
     const checkCommand = isWin 
@@ -692,6 +717,7 @@ fastify.post('/api/kill-port', async (request, reply) => {
       checkProc.on('close', () => resolve());
     });
 
+    console.log('Port check output:', checkOutput);
     const isPortFree = checkOutput.trim().length === 0;
 
     return reply.send({
@@ -701,9 +727,10 @@ fastify.post('/api/kill-port', async (request, reply) => {
       exitCode,
       stdout,
       stderr,
+      checkOutput,
       message: isPortFree 
         ? `Successfully killed process on port ${port}` 
-        : `Attempted to kill process on port ${port}, but port may still be in use`
+        : `Attempted to kill process on port ${port}, but port may still be in use. Try killing the process manually.`
     });
   } catch (err) {
     console.log('Kill port error:', err.message);

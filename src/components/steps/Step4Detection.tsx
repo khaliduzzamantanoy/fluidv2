@@ -85,17 +85,20 @@ export default function Step4Detection({ dirPath, onNext }: Step4Props) {
         body: JSON.stringify({ port: portToKill })
       });
       const data = await res.json();
+      console.log('Kill port response:', data);
+      
       if (data.success && data.killed) {
-        // Port successfully killed, recheck after a moment
+        // Port successfully killed, recheck after longer delay
         setTimeout(() => {
           checkPortAvailability(portToKill);
-        }, 1500);
+        }, 3000);
       } else {
-        // Failed to kill, show error and recheck
+        // Failed to kill, show error and recheck anyway
         console.error('Failed to kill process:', data.message);
+        console.error('Check output:', data.checkOutput);
         setTimeout(() => {
           checkPortAvailability(portToKill);
-        }, 1500);
+        }, 3000);
       }
     } catch (err: any) {
       console.error('Failed to kill process:', err);
