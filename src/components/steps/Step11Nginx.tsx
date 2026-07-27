@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Server, ArrowRight, RefreshCw, CheckCircle2, Code2 } from 'lucide-react';
+import { Server, ArrowRight, RefreshCw, CheckCircle2, Code2, Globe, AlertCircle, SearchCheck } from 'lucide-react';
 import Terminal from '../Terminal';
 
 interface Step11Props {
@@ -16,6 +16,9 @@ export default function Step11Nginx({ domain, wwwDomain, port, onNext }: Step11P
   const [loading, setLoading] = useState(true);
   const [testingNginx, setTestingNginx] = useState(false);
   const [nginxOk, setNginxOk] = useState(false);
+  const [checkingDomain, setCheckingDomain] = useState(false);
+  const [domainAccessible, setDomainAccessible] = useState(false);
+  const [allowProceed, setAllowProceed] = useState(false);
 
   useEffect(() => {
     async function generateNginx() {
@@ -41,6 +44,23 @@ export default function Step11Nginx({ domain, wwwDomain, port, onNext }: Step11P
   }, [domain, wwwDomain, port]);
 
   const reloadNginxCmd = `nginx -t && systemctl reload nginx || service nginx reload || true`;
+
+  const checkDomainAccess = async () => {
+    setCheckingDomain(true);
+    try {
+      const res = await fetch('/api/system/check-domain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain })
+      });
+      const data = await res.json();
+      setDomainAccessible(data.success);
+    } catch (e) {
+      setDomainAccessible(false);
+    } finally {
+      setCheckingDomain(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -93,13 +113,51 @@ export default function Step11Nginx({ domain, wwwDomain, port, onNext }: Step11P
                 />
 
                 {nginxOk && (
-                  <button
-                    onClick={onNext}
-                    className="w-full flex items-center justify-center space-x-2 py-3.5 px-6 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl shadow-lg transition"
-                  >
-                    <span>Nginx Configured & Active — Next: Finalizing</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
+                  <>
+                    {/* Domain Accessibility Check */}
+                    <div className="glass-panel p-4 rounded-xl border border-gray-800 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2 text-sm">
+                          <Globe className="w-4 h-4 text-brand-400" />
+                          <span className="text-gray-300">Check if domain is accessible:</span>
+                        </div>
+                        <button
+                          onClick={checkDomainAccess}
+                          disabled={checkingDomain}
+                          className="flex items-center space-x-1 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-lg transition disabled:opacity-50"
+                        >
+                          {checkingDomain ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <SearchCheck className="w-3.5 h-3.5" />
+                          )}
+                          <span>Check Domain</span>
+                        </button>
+                      </div>
+                      
+                      {domainAccessible && (
+                        <div className="flex items-center space-x-2 text-xs text-emerald-400">
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>Domain {domain} is accessible and responding correctly</span>
+                        </div>
+                      )}
+                      
+                      {!domainAccessible && checkingDomain === false && (
+                        <div className="flex items-center space-x-2 text-xs text-amber-400">
+                          <AlertCircle className="w-4 h-4" />
+                          <span>Domain may not be accessible yet. Check DNS propagation and nginx status.</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={onNext}
+                      className="w-full flex items-center justify-center space-x-2 py-3.5 px-6 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl shadow-lg transition"
+                    >
+                      <span>Nginx Configured & Active — Next: Finalizing</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </>
                 )}
               </div>
             )}

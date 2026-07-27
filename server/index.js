@@ -486,6 +486,42 @@ server {
 });
 
 // ----------------------------------------------------
+// DOMAIN ACCESSIBILITY CHECK
+// ----------------------------------------------------
+fastify.post('/api/system/check-domain', async (request, reply) => {
+  const { domain } = request.body || {};
+  if (!domain) {
+    return reply.status(400).send({ success: false, error: 'Domain is required' });
+  }
+
+  try {
+    const protocol = domain.startsWith('https') ? 'https' : 'http';
+    const url = `${protocol}://${domain}`;
+    
+    const response = await httpRequest(url, {
+      method: 'GET',
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'Fluid-VPS-Assistant'
+      }
+    });
+
+    return reply.send({
+      success: true,
+      accessible: true,
+      statusCode: response.statusCode
+    });
+  } catch (e) {
+    console.error('Domain check failed:', e.message);
+    return reply.send({
+      success: false,
+      accessible: false,
+      error: e.message
+    });
+  }
+});
+
+// ----------------------------------------------------
 // 12. STEP 12: SSH DEPLOY KEY CREATION
 // ----------------------------------------------------
 fastify.post('/api/system/deploy-key', async (request, reply) => {
