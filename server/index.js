@@ -688,6 +688,26 @@ fastify.post('/api/kill-port', async (request, reply) => {
         console.log('PIDs to kill:', pids);
         
         for (const pid of pids) {
+          // Try with sudo first (process might be running as root)
+          console.log('Attempting to kill PID', pid, 'with sudo...');
+          const sudoKillProc = spawn('sudo', ['kill', '-9', pid.trim()]);
+          
+          sudoKillProc.stdout.on('data', (chunk) => {
+            console.log('Sudo kill stdout:', chunk.toString());
+          });
+          
+          sudoKillProc.stderr.on('data', (chunk) => {
+            console.log('Sudo kill stderr:', chunk.toString());
+          });
+          
+          await new Promise(resolve => {
+            sudoKillProc.on('close', (code) => {
+              console.log('Sudo kill PID', pid, 'exit code:', code);
+              resolve();
+            });
+          });
+          
+          // If sudo failed, try without sudo
           const killProc = spawn('kill', ['-9', pid.trim()]);
           
           killProc.stdout.on('data', (chunk) => {
@@ -706,12 +726,26 @@ fastify.post('/api/kill-port', async (request, reply) => {
           });
         }
       } else {
-        // Fallback: try fuser
+        // Fallback: try fuser with sudo
+        console.log('No PID found, trying fuser with sudo...');
+        const sudoFuserProc = spawn('sudo', ['fuser', '-k', `${port}/tcp`]);
+        await new Promise(resolve => {
+          sudoFuserProc.on('close', () => resolve());
+        });
+        
+        // Try without sudo
         const fuserProc = spawn('fuser', ['-k', `${port}/tcp`]);
         await new Promise(resolve => {
           fuserProc.on('close', () => resolve());
         });
       }
+      
+      // Additional fallback: kill by process name if it's node
+      console.log('Attempting to kill node processes on port', port);
+      const pkillProc = spawn('pkill', ['-f', `:${port}`]);
+      await new Promise(resolve => {
+        pkillProc.on('close', () => resolve());
+      });
     }
 
     // Wait for process to be killed
