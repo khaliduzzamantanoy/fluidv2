@@ -661,7 +661,31 @@ fastify.post('/api/kill-port', async (request, reply) => {
         }
       }
     } else {
-      // Linux: Simple approach - find PID and kill it directly
+      // Linux: Check if it's a PM2 process first
+      console.log('Checking if process is managed by PM2...');
+      const pm2CheckProc = spawn('bash', ['-c', 'pm2 list 2>/dev/null || echo "PM2 not available"']);
+      let pm2Output = '';
+      
+      pm2CheckProc.stdout.on('data', (chunk) => {
+        pm2Output += chunk.toString();
+      });
+      
+      await new Promise(resolve => {
+        pm2CheckProc.on('close', () => resolve());
+      });
+      
+      console.log('PM2 list output:', pm2Output);
+      
+      // If PM2 is available, try to stop all processes
+      if (!pm2Output.includes('PM2 not available')) {
+        console.log('Stopping all PM2 processes...');
+        const pm2StopProc = spawn('bash', ['-c', 'pm2 stop all 2>/dev/null && pm2 delete all 2>/dev/null']);
+        await new Promise(resolve => {
+          pm2StopProc.on('close', () => resolve());
+        });
+      }
+      
+      // Now try to kill by PID directly (no sudo needed since we're root)
       const findPidCommand = `lsof -ti:${port}`;
       const findProc = spawn('bash', ['-c', findPidCommand]);
       
@@ -688,26 +712,7 @@ fastify.post('/api/kill-port', async (request, reply) => {
         console.log('PIDs to kill:', pids);
         
         for (const pid of pids) {
-          // Try with sudo first (process might be running as root)
-          console.log('Attempting to kill PID', pid, 'with sudo...');
-          const sudoKillProc = spawn('sudo', ['kill', '-9', pid.trim()]);
-          
-          sudoKillProc.stdout.on('data', (chunk) => {
-            console.log('Sudo kill stdout:', chunk.toString());
-          });
-          
-          sudoKillProc.stderr.on('data', (chunk) => {
-            console.log('Sudo kill stderr:', chunk.toString());
-          });
-          
-          await new Promise(resolve => {
-            sudoKillProc.on('close', (code) => {
-              console.log('Sudo kill PID', pid, 'exit code:', code);
-              resolve();
-            });
-          });
-          
-          // If sudo failed, try without sudo
+          console.log('Killing PID', pid, 'directly (no sudo)...');
           const killProc = spawn('kill', ['-9', pid.trim()]);
           
           killProc.stdout.on('data', (chunk) => {
@@ -725,26 +730,27 @@ fastify.post('/api/kill-port', async (request, reply) => {
             });
           });
         }
-      } else {
-        // Fallback: try fuser with sudo
-        console.log('No PID found, trying fuser with sudo...');
-        const sudoFuserProc = spawn('sudo', ['fuser', '-k', `${port}/tcp`]);
-        await new Promise(resolve => {
-          sudoFuserProc.on('close', () => resolve());
-        });
-        
-        // Try without sudo
-        const fuserProc = spawn('fuser', ['-k', `${port}/tcp`]);
-        await new Promise(resolve => {
-          fuserProc.on('close', () => resolve());
-        });
       }
       
-      // Additional fallback: kill by process name if it's node
-      console.log('Attempting to kill node processes on port', port);
-      const pkillProc = spawn('pkill', ['-f', `:${port}`]);
+      // Fallback: try fuser
+      console.log('Trying fuser...');
+      const fuserProc = spawn('fuser', ['-k', `${port}/tcp`]);
+      await new Promise(resolve => {
+        fuserProc.on('close', () => resolve());
+      });
+      
+      // Additional fallback: kill by process name
+      console.log('Attempting to kill processes matching port', port);
+      const pkillProc = spawn('pkill', ['-9', '-f', `:${port}`]);
       await new Promise(resolve => {
         pkillProc.on('close', () => resolve());
+      });
+      
+      // Final fallback: kill all node processes on this port
+      console.log('Final fallback: killing all node processes...');
+      const killAllNodeProc = spawn('bash', ['-c', 'killall -9 node 2>/dev/null || true']);
+      await new Promise(resolve => {
+        killAllNodeProc.on('close', () => resolve());
       });
     }
 
