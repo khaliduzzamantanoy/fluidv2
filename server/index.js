@@ -635,70 +635,86 @@ fastify.post('/api/kill-port', async (request, reply) => {
 
   try {
     const isWin = process.platform === 'win32';
-    let killCommand;
     
     if (isWin) {
-      killCommand = `for /f "tokens=5" %a in ('netstat -ano ^| findstr :${port}') do taskkill /F /PID %a`;
+      // Windows: Find and kill process
+      const findPidCommand = `netstat -ano | findstr :${port}`;
+      const findProc = spawn('cmd', ['/c', findPidCommand]);
+      
+      let findOutput = '';
+      findProc.stdout.on('data', (chunk) => {
+        findOutput += chunk.toString();
+      });
+      
+      await new Promise(resolve => {
+        findProc.on('close', () => resolve());
+      });
+      
+      if (findOutput.trim()) {
+        const pidMatch = findOutput.match(/LISTENING\s+(\d+)/);
+        if (pidMatch) {
+          const pid = pidMatch[1];
+          const killProc = spawn('taskkill', ['/F', '/PID', pid]);
+          await new Promise(resolve => {
+            killProc.on('close', () => resolve());
+          });
+        }
+      }
     } else {
-      // Try multiple methods to kill the process - more aggressive
-      killCommand = `
-        # Method 1: lsof with sudo if available
-        if command -v sudo &> /dev/null; then
-          sudo lsof -ti:${port} 2>/dev/null | xargs -r sudo kill -9 2>/dev/null
-        else
-          lsof -ti:${port} 2>/dev/null | xargs -r kill -9 2>/dev/null
-        fi
+      // Linux: Simple approach - find PID and kill it directly
+      const findPidCommand = `lsof -ti:${port}`;
+      const findProc = spawn('bash', ['-c', findPidCommand]);
+      
+      let pidOutput = '';
+      findProc.stdout.on('data', (chunk) => {
+        pidOutput += chunk.toString();
+      });
+      
+      findProc.stderr.on('data', (chunk) => {
+        console.log('Find PID stderr:', chunk.toString());
+      });
+      
+      await new Promise(resolve => {
+        findProc.on('close', (code) => {
+          console.log('Find PID exit code:', code);
+          resolve();
+        });
+      });
+      
+      console.log('Found PID:', pidOutput.trim());
+      
+      if (pidOutput.trim()) {
+        const pids = pidOutput.trim().split('\n').filter(p => p.trim());
+        console.log('PIDs to kill:', pids);
         
-        # Method 2: fuser with sudo if available
-        if command -v sudo &> /dev/null; then
-          sudo fuser -k ${port}/tcp 2>/dev/null
-        else
-          fuser -k ${port}/tcp 2>/dev/null
-        fi
-        
-        # Method 3: netstat + kill with sudo if available
-        PIDS=$(netstat -tlnp 2>/dev/null | grep :${port} | awk '{print $7}' | cut -d'/' -f1)
-        if [ ! -z "$PIDS" ]; then
-          for pid in $PIDS; do
-            if command -v sudo &> /dev/null; then
-              sudo kill -9 $pid 2>/dev/null
-            else
-              kill -9 $pid 2>/dev/null
-            fi
-          done
-        fi
-        
-        # Method 4: pkill as last resort
-        if command -v sudo &> /dev/null; then
-          sudo pkill -f ":${port}" 2>/dev/null
-        else
-          pkill -f ":${port}" 2>/dev/null
-        fi
-      `;
+        for (const pid of pids) {
+          const killProc = spawn('kill', ['-9', pid.trim()]);
+          
+          killProc.stdout.on('data', (chunk) => {
+            console.log('Kill stdout:', chunk.toString());
+          });
+          
+          killProc.stderr.on('data', (chunk) => {
+            console.log('Kill stderr:', chunk.toString());
+          });
+          
+          await new Promise(resolve => {
+            killProc.on('close', (code) => {
+              console.log('Kill PID', pid, 'exit code:', code);
+              resolve();
+            });
+          });
+        }
+      } else {
+        // Fallback: try fuser
+        const fuserProc = spawn('fuser', ['-k', `${port}/tcp`]);
+        await new Promise(resolve => {
+          fuserProc.on('close', () => resolve());
+        });
+      }
     }
 
-    const proc = spawn('bash', ['-c', killCommand]);
-    
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (chunk) => {
-      stdout += chunk.toString();
-    });
-    
-    proc.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    const exitCode = await new Promise((resolve) => {
-      proc.on('close', (code) => resolve(code));
-    });
-
-    console.log('Kill command exit code:', exitCode);
-    console.log('Kill stdout:', stdout);
-    console.log('Kill stderr:', stderr);
-
-    // Wait longer for the process to actually be killed
+    // Wait for process to be killed
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Check if port is now free
@@ -724,9 +740,6 @@ fastify.post('/api/kill-port', async (request, reply) => {
       success: true,
       port: port,
       killed: isPortFree,
-      exitCode,
-      stdout,
-      stderr,
       checkOutput,
       message: isPortFree 
         ? `Successfully killed process on port ${port}` 
