@@ -6,7 +6,7 @@ import { Sliders, ArrowRight, Key, Power, RefreshCw, CheckCircle2 } from 'lucide
 interface Step12Props {
   selectedRepo: any;
   githubToken: string;
-  onNext: () => void;
+  onNext: (data:{sshKey?: string}) => void;
 }
 
 export default function Step12FinalSetup({ selectedRepo, githubToken, onNext }: Step12Props) {
@@ -14,22 +14,27 @@ export default function Step12FinalSetup({ selectedRepo, githubToken, onNext }: 
   const [enableAutoStart, setEnableAutoStart] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [keyDone, setKeyDone] = useState(false);
+  const [sshKey, setSshKey] = useState<string | null>(null);
 
   const handleFinalize = async () => {
     setProcessing(true);
     if (generateDeployKey && selectedRepo) {
       try {
         const [owner, repo] = selectedRepo.fullName.split('/');
-        await fetch('/api/system/deploy-key', {
+        const res = await fetch('/api/system/deploy-key', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ owner, repo, token: githubToken })
         });
+        const data = await res.json();
+        if (data.success && data.publicKey) {
+          setSshKey(data.publicKey);
+        }
         setKeyDone(true);
       } catch (e) {}
     }
     setProcessing(false);
-    onNext();
+    onNext({ sshKey });
   };
 
   return (

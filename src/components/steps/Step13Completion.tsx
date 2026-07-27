@@ -1,17 +1,19 @@
 'use client';
 
 import { useState } from 'react';
-import { CheckCircle2, ExternalLink, Trash2, ShieldCheck, Sparkles, RefreshCw } from 'lucide-react';
+import { CheckCircle2, ExternalLink, Trash2, ShieldCheck, Sparkles, RefreshCw, Copy, Key } from 'lucide-react';
 
 interface Step13Props {
   repoName: string;
   domain: string;
   port: number;
+  sshKey?: string;
 }
 
-export default function Step13Completion({ repoName, domain, port }: Step13Props) {
+export default function Step13Completion({ repoName, domain, port, sshKey }: Step13Props) {
   const [cleaned, setCleaned] = useState(false);
   const [cleaning, setCleaning] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const fullDomainUrl = domain.startsWith('http') ? domain : `https://${domain}`;
 
@@ -24,6 +26,25 @@ export default function Step13Completion({ repoName, domain, port }: Step13Props
       setCleaned(true);
     } finally {
       setCleaning(false);
+    }
+  };
+
+  const handleCopyKey = () => {
+    if (sshKey) {
+      navigator.clipboard.writeText(sshKey).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }).catch(() => {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = sshKey;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
     }
   };
 
@@ -85,6 +106,40 @@ export default function Step13Completion({ repoName, domain, port }: Step13Props
             </div>
           </div>
         </div>
+
+        {/* SSH Key Display */}
+        {sshKey && (
+          <div className="glass-panel p-5 rounded-2xl border border-brand-500/30 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Key className="w-4 h-4 text-brand-400" />
+                <span className="text-sm font-semibold text-white">SSH Deploy Key Generated</span>
+              </div>
+              <button
+                onClick={handleCopyKey}
+                className="flex items-center space-x-1 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-lg transition"
+              >
+                {copied ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy Key</span>
+                  </>
+                )}
+              </button>
+            </div>
+            <div className="bg-dark-bg/80 rounded-lg p-3 border border-gray-800">
+              <code className="text-xs text-gray-300 break-all font-mono">{sshKey}</code>
+            </div>
+            <p className="text-xs text-gray-400">
+              This SSH key has been automatically added to your GitHub repository for automated deployments.
+            </p>
+          </div>
+        )}
 
         {/* Self-Destruct Banner */}
         {!cleaned ? (

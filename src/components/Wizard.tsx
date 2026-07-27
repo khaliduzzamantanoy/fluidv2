@@ -35,6 +35,7 @@ export default function Wizard() {
     wwwDomain: '',
     vpsIp: '',
     sslConfig: null,
+    sshKey: '',
   });
 
   const stepsList = [
@@ -238,7 +239,7 @@ export default function Wizard() {
             <Step12FinalSetup
               selectedRepo={wizardData.selectedRepo}
               githubToken={wizardData.githubToken}
-              onNext={() => goToNext()}
+              onNext={(data) => goToNext({ sshKey: data.sshKey })}
             />
           )}
 
@@ -246,6 +247,7 @@ export default function Wizard() {
             <Step13Completion
               repoName={wizardData.selectedRepo?.name}
               domain={wizardData.domain}
+              sshKey={wizardData.sshKey}
               port={wizardData.port}
             />
           )}
