@@ -14,7 +14,7 @@ export default function Step12FinalSetup({ selectedRepo, githubToken, onNext }: 
   const [enableAutoStart, setEnableAutoStart] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [keyDone, setKeyDone] = useState(false);
-  const [sshKey, setSshKey] = useState<string | null>(null);
+  const [sshKey, setSshKey] = useState<string | undefined>(undefined);
 
   const handleFinalize = async () => {
     setProcessing(true);
