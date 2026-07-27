@@ -34,9 +34,20 @@ export default function Step8IPDetect({ domain, wwwDomain, onNext }: Step8Props)
 
   const copyIp = () => {
     if (vpsIp) {
-      navigator.clipboard.writeText(vpsIp);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      navigator.clipboard.writeText(vpsIp).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }).catch(() => {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = vpsIp;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
     }
   };
 
