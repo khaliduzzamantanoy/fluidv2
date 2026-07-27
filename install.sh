@@ -4,7 +4,7 @@
 # FLUID — ONE TIME VPS DEPLOYMENT ASSISTANT
 # One-liner automated installation script for Ubuntu VPS
 # Usage: curl -fsSL https://fluid.yourdomain.com/install | bash
-# Version: 1.0.6
+# Version: 1.0.7
 # ==============================================================================
 
 set -e
@@ -20,7 +20,7 @@ NC='\033[0m' # No Color
 echo -e "${CYAN}${BOLD}"
 echo "=============================================================================="
 echo "                   FLUID — VPS DEPLOYMENT ASSISTANT                           "
-echo "                              Version 1.0.6                                   "
+echo "                              Version 1.0.7                                   "
 echo "=============================================================================="
 echo -e "${NC}"
 

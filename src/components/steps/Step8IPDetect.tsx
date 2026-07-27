@@ -32,22 +32,36 @@ export default function Step8IPDetect({ domain, wwwDomain, onNext }: Step8Props)
     fetchIp();
   }, []);
 
-  const copyIp = () => {
+  const copyIp = async () => {
     if (vpsIp) {
-      navigator.clipboard.writeText(vpsIp).then(() => {
+      try {
+        await navigator.clipboard.writeText(vpsIp);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
-      }).catch(() => {
+      } catch (err) {
+        console.error('Clipboard API failed:', err);
         // Fallback for older browsers
-        const textArea = document.createElement('textarea');
-        textArea.value = vpsIp;
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textArea);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      });
+        try {
+          const textArea = document.createElement('textarea');
+          textArea.value = vpsIp;
+          textArea.style.position = 'fixed';
+          textArea.style.left = '-999999px';
+          textArea.style.top = '-999999px';
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          const successful = document.execCommand('copy');
+          document.body.removeChild(textArea);
+          if (successful) {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          } else {
+            console.error('Fallback copy failed');
+          }
+        } catch (fallbackErr) {
+          console.error('Fallback copy error:', fallbackErr);
+        }
+      }
     }
   };
 
