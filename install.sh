@@ -4,6 +4,7 @@
 # FLUID — ONE TIME VPS DEPLOYMENT ASSISTANT
 # One-liner automated installation script for Ubuntu VPS
 # Usage: curl -fsSL https://fluid.yourdomain.com/install | bash
+# Version: 1.0.0
 # ==============================================================================
 
 set -e
