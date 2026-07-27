@@ -739,18 +739,11 @@ fastify.post('/api/kill-port', async (request, reply) => {
         fuserProc.on('close', () => resolve());
       });
       
-      // Additional fallback: kill by process name
+      // Additional fallback: kill by process name (but exclude Fluid server)
       console.log('Attempting to kill processes matching port', port);
       const pkillProc = spawn('pkill', ['-9', '-f', `:${port}`]);
       await new Promise(resolve => {
         pkillProc.on('close', () => resolve());
-      });
-      
-      // Final fallback: kill all node processes on this port
-      console.log('Final fallback: killing all node processes...');
-      const killAllNodeProc = spawn('bash', ['-c', 'killall -9 node 2>/dev/null || true']);
-      await new Promise(resolve => {
-        killAllNodeProc.on('close', () => resolve());
       });
     }
 
