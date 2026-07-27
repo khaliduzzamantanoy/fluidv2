@@ -49,10 +49,18 @@ export default function Step3DirSelect({ selectedRepo, branch, githubToken, onNe
 
   // Construct clone command using GitHub token — no credential prompts, streamed progress
   const cloneUrl = `https://x-access-token:${githubToken}@github.com/${selectedRepo?.fullName}.git`;
-  const cloneCommand = [
-    `mkdir -p ${dirPath}`,
-    `GIT_TERMINAL_PROMPT=0 git clone --progress -b ${branch} ${cloneUrl} ${dirPath} 2>&1`,
-  ].join(' && ');
+  
+  // If directory exists and user granted permission, remove it first then clone
+  const cloneCommand = dirStatus?.exists && !dirStatus?.isEmpty && permissionGranted
+    ? [
+        `rm -rf ${dirPath}`,
+        `mkdir -p ${dirPath}`,
+        `GIT_TERMINAL_PROMPT=0 git clone --progress -b ${branch} ${cloneUrl} ${dirPath} 2>&1`,
+      ].join(' && ')
+    : [
+        `mkdir -p ${dirPath}`,
+        `GIT_TERMINAL_PROMPT=0 git clone --progress -b ${branch} ${cloneUrl} ${dirPath} 2>&1`,
+      ].join(' && ');
 
   const handleStartClone = async () => {
     setCloning(true);
