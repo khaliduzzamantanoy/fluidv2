@@ -1,128 +1,161 @@
 #!/usr/bin/env bash
 
-# ==============================================================================
-# FLUID — ONE TIME VPS DEPLOYMENT ASSISTANT
-# One-liner automated installation script for Ubuntu VPS
-# Usage: curl -fsSL https://fluid.yourdomain.com/install | bash
-# Version: 1.0.7
-# ==============================================================================
-
 set -e
 
-# Colors for terminal output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m' # No Color
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
 echo -e "${CYAN}${BOLD}"
 echo "=============================================================================="
-echo "                   FLUID — VPS DEPLOYMENT ASSISTANT                           "
-echo "                              Version 1.0.7                                   "
+echo "                   FLUID — VPS PORTAL (v2.0)                                 "
+echo "                   Full Server Management Platform                            "
 echo "=============================================================================="
 echo -e "${NC}"
 
-# 1. OS & PERMISSION CHECK
 if [ "$EUID" -ne 0 ]; then
-  echo -e "${RED}[ERROR] Please run this installer as root (e.g. sudo bash)${NC}"
-  exit 1
+  echo -e "${RED}[ERROR] Please run as root (e.g. sudo bash)${NC}"; exit 1
 fi
 
 if [ -f /etc/os-release ]; then
-  . /etc/os-release
-  OS=$NAME
-  VER=$VERSION_ID
+  . /etc/os-release; OS=$NAME; VER=$VERSION_ID
 else
-  echo -e "${RED}[ERROR] Cannot detect OS version. Ubuntu 22.04+ recommended.${NC}"
-  exit 1
+  echo -e "${RED}[ERROR] Cannot detect OS. Ubuntu 22.04+ recommended.${NC}"; exit 1
 fi
+echo -e "${GREEN}[1/7] OS:${NC} $OS $VER"
 
-echo -e "${GREEN}[1/5] OS Detected:${NC} $OS $VER"
-
-if [[ "$ID" != "ubuntu" && "$ID_LIKE" != *"ubuntu"* ]]; then
-  echo -e "${YELLOW}[WARNING] System is not Ubuntu ($ID). Continuing anyway...${NC}"
-fi
-
-# 2. UPDATE & INSTALL DEPENDENCIES
-echo -e "${GREEN}[2/5] Updating package index & installing core dependencies...${NC}"
+# Install core dependencies
+echo -e "${GREEN}[2/7] Installing core dependencies...${NC}"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y curl wget git build-essential python3 python3-pip software-properties-common nginx certbot python3-certbot-nginx ufw
+apt-get install -y curl wget git build-essential python3 python3-pip software-properties-common nginx certbot python3-certbot-nginx ufw gnupg
 
-# Install Node.js Latest LTS via NodeSource if node is missing or older than v18
+# Install Node.js 20 LTS
 NODE_NEED_INSTALL=true
 if command -v node >/dev/null 2>&1; then
   NODE_VER=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-  if [ "$NODE_VER" -ge 18 ]; then
-    NODE_NEED_INSTALL=false
-    echo -e "${GREEN}[INFO] Node.js $(node -v) is already installed.${NC}"
-  fi
+  [ "$NODE_VER" -ge 18 ] && NODE_NEED_INSTALL=false
 fi
-
 if [ "$NODE_NEED_INSTALL" = true ]; then
-  echo -e "${GREEN}[INFO] Installing Node.js LTS...${NC}"
+  echo -e "${GREEN}[INFO] Installing Node.js 20 LTS...${NC}"
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
   apt-get install -y nodejs
 fi
 
-# Install Global Package Managers & PM2
-echo -e "${GREEN}[INFO] Installing PM2 and pnpm...${NC}"
+# Install PM2 and pnpm
+echo -e "${GREEN}[INFO] Installing PM2...${NC}"
 npm install -g pm2 pnpm >/dev/null 2>&1 || true
 
-# 3. SET UP TEMPORARY WORKSPACE
-FLUID_DIR="/tmp/fluid"
-echo -e "${GREEN}[3/5] Setting up temporary workspace at ${FLUID_DIR}...${NC}"
-rm -rf "$FLUID_DIR"
-mkdir -p "$FLUID_DIR"
-
-# Download or clone Fluid codebase into /tmp/fluid
-if [ -d "./server" ] && [ -f "./package.json" ]; then
-  # Local copy if executing inside repository
-  cp -r ./* "$FLUID_DIR/"
+# Install MongoDB
+echo -e "${GREEN}[3/7] Installing MongoDB...${NC}"
+if ! command -v mongod >/dev/null 2>&1; then
+  curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+  echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+  apt-get update -y
+  apt-get install -y mongodb-org
+  systemctl daemon-reload
+  systemctl enable mongod
+  systemctl start mongod
+  echo -e "${GREEN}[OK] MongoDB installed and running${NC}"
 else
-  # Remote archive download from repo
-  echo -e "${GREEN}[INFO] Downloading Fluid codebase archive...${NC}"
+  echo -e "${GREEN}[OK] MongoDB already installed${NC}"
+fi
+
+# Set up project directory
+FLUID_DIR="/opt/fluid"
+echo -e "${GREEN}[4/7] Setting up Fluid at ${FLUID_DIR}...${NC}"
+
+if [ -d "./server" ] && [ -f "./package.json" ]; then
+  cp -r ./* "$FLUID_DIR/" 2>/dev/null || true
+fi
+
+if [ ! -f "$FLUID_DIR/package.json" ]; then
+  mkdir -p "$FLUID_DIR"
   curl -fsSL https://github.com/khaliduzzamantanoy/fluidv2/archive/refs/heads/main.tar.gz | tar -xz -C "$FLUID_DIR" --strip-components=1 2>/dev/null || {
     git clone --depth 1 https://github.com/khaliduzzamantanoy/fluidv2.git "$FLUID_DIR" || {
-      echo -e "${RED}[ERROR] Failed to download fluidv2.${NC}"
-      exit 1
+      echo -e "${RED}[ERROR] Failed to download Fluid${NC}"; exit 1
     }
   }
 fi
 
 cd "$FLUID_DIR"
 
-# 4. BUILD & START FLUID SERVICE
-echo -e "${GREEN}[4/5] Building Fluid GUI & launching setup service...${NC}"
-npm install --silent
-npm run build || true
+# Install Node dependencies
+echo -e "${GREEN}[5/7] Installing Node.js dependencies...${NC}"
+npm install --omit=dev 2>&1 | tail -1
 
-# Open firewall port 6776 if ufw is active
+# Build frontend
+echo -e "${GREEN}[INFO] Building frontend...${NC}"
+npm run build 2>&1 | tail -5 || echo -e "${YELLOW}[WARN] Build incomplete - will retry on first start${NC}"
+
+# Setup MongoDB database
+echo -e "${GREEN}[6/7] Configuring database...${NC}"
+node server/setup-mongodb.js 2>&1 || echo -e "${YELLOW}[WARN] MongoDB setup incomplete - run manually with: npm run setup:db${NC}"
+
+# Configure firewall
+echo -e "${GREEN}[INFO] Configuring firewall...${NC}"
 if command -v ufw >/dev/null 2>&1; then
   ufw allow 6776/tcp >/dev/null 2>&1 || true
   ufw allow 80/tcp >/dev/null 2>&1 || true
   ufw allow 443/tcp >/dev/null 2>&1 || true
+  ufw allow 22/tcp >/dev/null 2>&1 || true
 fi
 
-# 5. GET VPS PUBLIC IP & DISPLAY SUCCESS
+# Create systemd service
+echo -e "${GREEN}[7/7] Creating systemd service...${NC}"
+cat > /etc/systemd/system/fluid.service << 'SERVICEEOF'
+[Unit]
+Description=Fluid VPS Portal
+After=network.target mongod.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/fluid
+ExecStart=/usr/bin/node server/index.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+StandardOutput=append:/var/log/fluid.log
+StandardError=append:/var/log/fluid.error.log
+
+[Install]
+WantedBy=multi-user.target
+SERVICEEOF
+
+systemctl daemon-reload
+systemctl enable fluid
+
+# Start Fluid
+echo -e "${GREEN}[INFO] Starting Fluid service...${NC}"
+systemctl start fluid || {
+  echo -e "${YELLOW}[WARN] Service start failed. Starting manually...${NC}"
+  nohup node server/index.js > /var/log/fluid.log 2>&1 &
+}
+
+sleep 3
+
+# Check status
+if systemctl is-active --quiet fluid 2>/dev/null || pgrep -f "node server/index.js" > /dev/null; then
+  echo -e "${GREEN}[OK] Fluid is running${NC}"
+else
+  echo -e "${YELLOW}[WARN] Checking /var/log/fluid.log for details${NC}"
+fi
+
+# Get IP
 VPS_IP=$(curl -s --max-time 3 https://api.ipify.org || curl -s --max-time 3 https://ifconfig.me || echo "VPS_IP")
-
-# Launch Fastify server in background / daemon
-nohup node server/index.js > /tmp/fluid_server.log 2>&1 &
-
-sleep 2
 
 echo -e "${GREEN}${BOLD}"
 echo "=============================================================================="
-echo "             FLUID SETUP SERVICE IS READY & LISTENING!                        "
+echo "             FLUID VPS PORTAL IS READY!                                       "
 echo "=============================================================================="
 echo -e "${NC}"
-echo -e "Open your web browser and navigate to:"
-echo -e "${CYAN}${BOLD}http://${VPS_IP}:6776${NC}"
-echo -e "http://localhost:6776"
+echo -e "  Open your browser and navigate to:"
+echo -e "  ${CYAN}${BOLD}http://${VPS_IP}:6776${NC}"
 echo ""
-echo -e "${YELLOW}Follow the guided 13-step wizard to complete project deployment.${NC}"
-echo -e "Fluid will self-destruct automatically when deployment finishes."
+echo -e "  If this is the first time, create your admin account at the setup page."
+echo -e "  Manage your projects, domains, deployments, and server all in one place."
+echo ""
+echo -e "  ${YELLOW}Useful commands:${NC}"
+echo -e "  systemctl status fluid   # Check service status"
+echo -e "  journalctl -u fluid -f   # Follow logs"
+echo -e "  npm run setup:auth       # Create additional admin users"
 echo "=============================================================================="
