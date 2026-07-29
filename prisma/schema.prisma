@@ -17,7 +17,8 @@ model User {
   githubToken  String?
   githubId     Int?
   githubLogin  String?
-  role         String    @default("owner")
+  role              String    @default("owner")
+  mustChangePassword Boolean   @default(false)
   lastLoginAt  DateTime?
   settings     Json      @default("{\"theme\":\"dark\",\"notifications\":{\"deploy\":true,\"webhook\":true,\"security\":true},\"timezone\":\"UTC\"}")
   createdAt    DateTime  @default(now())

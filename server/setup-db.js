@@ -53,12 +53,11 @@ async function checkPostgreSQLInstalled() {
 }
 
 async function installPostgreSQL() {
-  log('cyan', '[1/4] Installing PostgreSQL...');
-
+  log('cyan', '[1/5] Installing PostgreSQL...');
   try {
     await runCommand('apt-get', ['update', '-y']);
     await runCommand('apt-get', ['install', '-y', 'postgresql', 'postgresql-contrib']);
-    log('green', 'PostgreSQL installed successfully');
+    log('green', 'PostgreSQL installed');
   } catch (err) {
     log('red', `PostgreSQL installation failed: ${err.message}`);
     throw err;
@@ -70,120 +69,106 @@ async function setupPostgreSQL() {
   const username = 'fluid';
   const password = generateSecurePassword(32);
 
-  log('cyan', '[2/4] Starting PostgreSQL...');
-  try {
-    await runCommand('systemctl', ['enable', 'postgresql']);
-    await runCommand('systemctl', ['start', 'postgresql']);
-  } catch {
-    log('yellow', '[WARN] Could not start PostgreSQL via systemctl, trying pg_ctlcluster...');
-    try {
-      const pgVersion = (await runCommand('pg_config', ['--version'])).match(/(\d+)/)?.[1] || '16';
-      await runCommand('pg_ctlcluster', [pgVersion, 'main', 'start']).catch(() => {});
-    } catch (e) {}
-  }
-
+  log('cyan', '[2/5] Starting PostgreSQL...');
+  await runCommand('systemctl', ['enable', 'postgresql']).catch(() => {});
+  await runCommand('systemctl', ['start', 'postgresql']).catch(() => {});
   await new Promise(r => setTimeout(r, 2000));
-  log('green', 'PostgreSQL is running');
 
-  log('cyan', '[3/4] Creating database and user...');
+  log('cyan', '[3/5] Creating database and user...');
+  await runCommandSafe('su', ['-', 'postgres', '-c', `psql -c "CREATE USER ${username} WITH PASSWORD '${password}';"`]);
+  await runCommandSafe('su', ['-', 'postgres', '-c', `psql -c "CREATE DATABASE ${dbName} OWNER ${username};"`]);
+  await runCommandSafe('su', ['-', 'postgres', '-c', `psql -c "GRANT ALL PRIVILEGES ON DATABASE ${dbName} TO ${username};"`]);
 
-  try {
-    await runCommand('su', ['-', 'postgres', '-c', `psql -c "CREATE USER ${username} WITH PASSWORD '${password}';"`]);
-  } catch {
-    log('yellow', '[INFO] User may already exist');
-  }
+  const dbUrl = `postgresql://${username}:${password}@127.0.0.1:5432/${dbName}`;
 
-  try {
-    await runCommand('su', ['-', 'postgres', '-c', `psql -c "CREATE DATABASE ${dbName} OWNER ${username};"`]);
-  } catch {
-    log('yellow', '[INFO] Database may already exist');
-  }
-
-  try {
-    await runCommand('su', ['-', 'postgres', '-c', `psql -c "GRANT ALL PRIVILEGES ON DATABASE ${dbName} TO ${username};"`]);
-  } catch (e) {}
-
-  log('green', 'Database and user created');
-
-  return { username, password, dbName };
-}
-
-async function runPrismaPush(databaseUrl) {
-  log('cyan', '[4/4] Running Prisma schema push...');
-
+  log('cyan', '[4/5] Running Prisma schema push...');
   const envPath = path.join(__dirname, '../.env');
   let envContent = '';
-  if (fs.existsSync(envPath)) {
-    envContent = fs.readFileSync(envPath, 'utf8');
-  }
+  if (fs.existsSync(envPath)) envContent = fs.readFileSync(envPath, 'utf8');
+
+  const jwtSecret = generateSecurePassword(64);
+  const encryptionKey = generateSecurePassword(32);
+  const cookieSecret = generateSecurePassword(32);
+  const adminPassword = 'hellofluid';
 
   const updates = {
-    DATABASE_URL: databaseUrl,
-    JWT_SECRET: generateSecurePassword(64),
-    ENCRYPTION_KEY: generateSecurePassword(32),
-    COOKIE_SECRET: generateSecurePassword(32)
+    DATABASE_URL: dbUrl,
+    JWT_SECRET: jwtSecret,
+    ENCRYPTION_KEY: encryptionKey,
+    COOKIE_SECRET: cookieSecret
   };
 
   for (const [key, value] of Object.entries(updates)) {
     const regex = new RegExp(`^${key}=.*`, 'm');
-    if (regex.test(envContent)) {
-      envContent = envContent.replace(regex, `${key}=${value}`);
-    } else {
-      envContent += `\n${key}=${value}`;
-    }
+    if (regex.test(envContent)) envContent = envContent.replace(regex, `${key}=${value}`);
+    else envContent += `\n${key}=${value}`;
   }
-
   fs.writeFileSync(envPath, envContent.trim() + '\n');
 
   try {
-    const proc = spawn('npx', ['prisma', 'db', 'push', '--accept-data-loss'], {
+    await runCommand('npx', ['prisma', 'db', 'push', '--accept-data-loss'], {
       cwd: path.join(__dirname, '..'),
-      stdio: 'pipe',
-      env: { ...process.env, DATABASE_URL: databaseUrl }
+      env: { ...process.env, DATABASE_URL: dbUrl }
     });
-    let stdout = '', stderr = '';
-    proc.stdout.on('data', (data) => stdout += data.toString());
-    proc.stderr.on('data', (data) => stderr += data.toString());
-    await new Promise((resolve, reject) => {
-      proc.on('close', (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(stderr || `Prisma push failed with code ${code}`));
-      });
-      proc.on('error', reject);
-    });
-    log('green', 'Prisma schema pushed successfully');
+    log('green', 'Prisma schema pushed');
   } catch (err) {
     log('yellow', `[WARN] Prisma push: ${err.message}`);
-    log('yellow', '[WARN] You may need to run: npx prisma db push');
   }
 
-  log('green', 'Credentials saved to .env');
+  log('cyan', '[5/5] Creating admin user...');
+  try {
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient({ datasources: { db: { url: dbUrl } } });
+    await prisma.$connect();
+
+    const existing = await prisma.user.count();
+    if (existing === 0) {
+      const bcrypt = await import('bcryptjs');
+      const hash = await bcrypt.hash(adminPassword, 12);
+      await prisma.user.create({
+        data: {
+          username: 'admin',
+          passwordHash: hash,
+          fullName: 'Administrator',
+          role: 'owner',
+          mustChangePassword: true
+        }
+      });
+      log('green', 'Default admin user created');
+    } else {
+      log('yellow', 'Admin user already exists, skipping creation');
+    }
+
+    await prisma.$disconnect();
+  } catch (err) {
+    log('yellow', `[WARN] Could not create admin user: ${err.message}`);
+  }
+
+  return { dbUrl, adminPassword };
 }
 
 async function main() {
   log('bold', '\n==================================================');
-  log('bold', '  FLUID VPS PORTAL - POSTGRESQL SETUP');
+  log('bold', '  FLUID VPS PORTAL - SETUP');
   log('bold', '==================================================\n');
 
   try {
     const isInstalled = await checkPostgreSQLInstalled();
-    if (!isInstalled) {
-      await installPostgreSQL();
-    } else {
-      log('green', '[1/4] PostgreSQL already installed');
-    }
+    if (!isInstalled) await installPostgreSQL();
+    else log('green', '[1/5] PostgreSQL already installed');
 
-    const creds = await setupPostgreSQL();
-
-    const databaseUrl = `postgresql://${creds.username}:${creds.password}@127.0.0.1:5432/${creds.dbName}`;
-    await runPrismaPush(databaseUrl);
+    const result = await setupPostgreSQL();
 
     log('bold', '\n==================================================');
-    log('green', '  DATABASE SETUP COMPLETE!');
+    log('green', '  SETUP COMPLETE!');
     log('bold', '==================================================\n');
-    log('cyan', 'Run: npm run setup:auth (to create admin user)');
-    log('cyan', 'Then: npm run build && npm start');
-    log('cyan', 'Access at http://your-vps-ip:6776\n');
+    log('cyan', '  Login credentials:');
+    log('bold', `  Username: admin`);
+    log('bold', `  Password: ${result.adminPassword}`);
+    log('yellow', '\n  ⚠ You will be prompted to change this password on first login.\n');
+    log('cyan', '  Open http://your-vps-ip:6776 to continue.\n');
+
+    console.log(`FLUID_ADMIN_PASSWORD=${result.adminPassword}`);
 
   } catch (err) {
     log('red', `\nSetup failed: ${err.message}`);

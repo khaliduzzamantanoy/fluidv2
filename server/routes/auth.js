@@ -96,10 +96,13 @@ export default async function authRoutes(fastify) {
       }
     });
 
+    const mustChangePassword = user.mustChangePassword === true;
+
     return reply.send({
       success: true,
-      user: { id: user.id, username: user.username, role: user.role, email: user.email },
-      token
+      user: { id: user.id, username: user.username, role: user.role, email: user.email, mustChangePassword },
+      token,
+      mustChangePassword
     });
   });
 
@@ -163,7 +166,7 @@ export default async function authRoutes(fastify) {
     const passwordHash = await bcrypt.hash(newPassword, 12);
     await prisma.user.update({
       where: { id: user.id },
-      data: { passwordHash }
+      data: { passwordHash, mustChangePassword: false }
     });
 
     await prisma.activityLog.create({

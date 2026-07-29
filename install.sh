@@ -77,7 +77,10 @@ echo -e "${GREEN}[INFO] Generating Prisma client...${NC}"
 npx prisma generate 2>&1 | tail -3
 
 echo -e "${GREEN}[6/8] Configuring database...${NC}"
-node server/setup-db.js 2>&1 || echo -e "${YELLOW}[WARN] PostgreSQL setup incomplete - run manually with: npm run setup:db${NC}"
+ADMIN_PASSWORD=""
+node server/setup-db.js 2>&1 | tee /tmp/fluid-setup.log || echo -e "${YELLOW}[WARN] PostgreSQL setup incomplete - run manually with: npm run setup:db${NC}"
+ADMIN_PASSWORD=$(grep "^FLUID_ADMIN_PASSWORD=" /tmp/fluid-setup.log | tail -1 | cut -d= -f2)
+rm -f /tmp/fluid-setup.log
 
 echo -e "${GREEN}[INFO] Building frontend...${NC}"
 npm run build 2>&1 | tail -10 || {
@@ -144,11 +147,18 @@ echo -e "${NC}"
 echo -e "  Open your browser and navigate to:"
 echo -e "  ${CYAN}${BOLD}http://${VPS_IP}:6776${NC}"
 echo ""
-echo -e "  If this is the first time, create your admin account at the setup page."
+
+if [ -n "$ADMIN_PASSWORD" ]; then
+  echo -e "  ${BOLD}Login credentials:${NC}"
+  echo -e "  Username: ${CYAN}admin${NC}"
+  echo -e "  Password: ${CYAN}${ADMIN_PASSWORD}${NC}"
+  echo -e "  ${YELLOW}⚠ You will be prompted to change this password on first login.${NC}"
+  echo ""
+fi
+
 echo -e "  Manage your projects, domains, deployments, and server all in one place."
 echo ""
 echo -e "  ${YELLOW}Useful commands:${NC}"
 echo -e "  systemctl status fluid   # Check service status"
 echo -e "  journalctl -u fluid -f   # Follow logs"
-echo -e "  npm run setup:auth       # Create additional admin users"
 echo "=============================================================================="

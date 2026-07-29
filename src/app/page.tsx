@@ -6,8 +6,9 @@ import AppShell from '@/components/AppShell';
 import { Loader2 } from 'lucide-react';
 
 export default function Home() {
-  const [authState, setAuthState] = useState<'loading' | 'setup' | 'login' | 'authenticated'>('loading');
+  const [authState, setAuthState] = useState<'loading' | 'setup' | 'login' | 'forceChange' | 'authenticated'>('loading');
   const [user, setUser] = useState<any>(null);
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
 
   useEffect(() => {
     checkAuth();
@@ -43,6 +44,17 @@ export default function Home() {
   };
 
   const handleAuthenticated = (userData: any, token: string) => {
+    if (userData.mustChangePassword) {
+      setUser(userData);
+      setPendingToken(token);
+      setAuthState('forceChange');
+      return;
+    }
+    setUser(userData);
+    setAuthState('authenticated');
+  };
+
+  const handleForceChangeDone = (userData: any) => {
     setUser(userData);
     setAuthState('authenticated');
   };
@@ -66,6 +78,16 @@ export default function Home() {
 
   if (authState === 'authenticated' && user) {
     return <AppShell user={user} onLogout={handleLogout} />;
+  }
+
+  if (authState === 'forceChange' && user) {
+    return <AuthPage
+      mode="forceChange"
+      user={user}
+      pendingToken={pendingToken}
+      onAuthenticated={handleForceChangeDone}
+      onLogout={handleLogout}
+    />;
   }
 
   return <AuthPage onAuthenticated={handleAuthenticated} />;
