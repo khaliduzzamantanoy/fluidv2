@@ -105,9 +105,9 @@ export default function ProjectsPage({ user, onNavigate }: ProjectsPageProps) {
         <div className="grid gap-3">
           {filtered.map((project) => (
             <div
-              key={project._id}
+              key={project.id}
               className="bg-[#0c1222] border border-gray-800/80 rounded-xl p-4 hover:border-gray-700/80 transition group cursor-pointer"
-              onClick={() => onNavigate('project-detail', project._id)}
+              onClick={() => onNavigate('project-detail', project.id)}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
@@ -146,11 +146,11 @@ export default function ProjectsPage({ user, onNavigate }: ProjectsPageProps) {
                 </div>
 
                 <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition">
-                  <button onClick={(e) => { e.stopPropagation(); onNavigate('project-detail', project._id); }}
+                  <button onClick={(e) => { e.stopPropagation(); onNavigate('project-detail', project.id); }}
                     className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition">
                     <Settings className="w-4 h-4" />
                   </button>
-                  <button onClick={(e) => { e.stopPropagation(); handleDelete(project._id); }}
+                  <button onClick={(e) => { e.stopPropagation(); handleDelete(project.id); }}
                     className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition">
                     <Trash2 className="w-4 h-4" />
                   </button>

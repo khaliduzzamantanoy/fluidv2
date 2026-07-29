@@ -35,7 +35,7 @@ export default function DomainPage({ user }: DomainPageProps) {
   }
 
   const allDomains = projects.flatMap((p: any) =>
-    (p.domains || []).map((d: any) => ({ ...d, projectName: p.name, projectId: p._id }))
+    (p.domains || []).map((d: any) => ({ ...d, projectName: p.name, projectId: p.id }))
   );
 
   return (
@@ -54,7 +54,7 @@ export default function DomainPage({ user }: DomainPageProps) {
       ) : (
         <div className="grid gap-3">
           {allDomains.map((d: any) => (
-            <div key={d._id} className="bg-[#0c1222] border border-gray-800/80 rounded-xl p-5">
+            <div key={d.id} className="bg-[#0c1222] border border-gray-800/80 rounded-xl p-5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
                   <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-500/20 flex items-center justify-center">

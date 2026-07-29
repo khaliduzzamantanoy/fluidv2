@@ -121,7 +121,7 @@ export default function DashboardHome({ user, onNavigate }: DashboardHomeProps) 
           {overview?.recentDeployments?.length > 0 ? (
             <div className="space-y-2">
               {overview.recentDeployments.slice(0, 5).map((dep: any) => (
-                <div key={dep._id} className="flex items-center justify-between py-2 border-b border-gray-800/60 last:border-0">
+                <div key={dep.id} className="flex items-center justify-between py-2 border-b border-gray-800/60 last:border-0">
                   <div className="flex items-center space-x-3">
                     {dep.status === 'success' ? (
                       <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />

@@ -230,7 +230,7 @@ export default function ProjectDetail({ projectId, user, onNavigate }: ProjectDe
                   <h3 className="text-sm font-semibold text-white mb-3">Domains</h3>
                   <div className="space-y-2">
                     {project.domains.map((d: any) => (
-                      <div key={d._id} className="flex items-center justify-between text-sm">
+                      <div key={d.id} className="flex items-center justify-between text-sm">
                         <div className="flex items-center space-x-2">
                           <Globe className="w-3.5 h-3.5 text-brand-400" />
                           <span className="text-white">{d.domain}</span>
@@ -263,7 +263,7 @@ export default function ProjectDetail({ projectId, user, onNavigate }: ProjectDe
             ) : (
               <div className="space-y-2">
                 {deployments.map((dep: any) => (
-                  <div key={dep._id} className="flex items-center justify-between py-3 px-3 bg-gray-800/20 rounded-lg border border-gray-800/60">
+                  <div key={dep.id} className="flex items-center justify-between py-3 px-3 bg-gray-800/20 rounded-lg border border-gray-800/60">
                     <div className="flex items-center space-x-3">
                       {dep.status === 'success' ? <CheckCircle className="w-4 h-4 text-emerald-400" /> :
                        dep.status === 'failed' ? <AlertCircle className="w-4 h-4 text-red-400" /> :
@@ -331,7 +331,7 @@ export default function ProjectDetail({ projectId, user, onNavigate }: ProjectDe
                 <p className="text-xs text-gray-500 text-center py-4">No environment variables set</p>
               ) : (
                 envVars.map((env: any) => (
-                  <div key={env._id} className="flex items-center justify-between py-2 px-3 bg-gray-800/20 rounded-lg">
+                  <div key={env.id} className="flex items-center justify-between py-2 px-3 bg-gray-800/20 rounded-lg">
                     <div className="flex items-center space-x-3">
                       <Key className="w-3.5 h-3.5 text-brand-400" />
                       <span className="text-xs font-mono text-white font-medium">{env.key}</span>
@@ -339,7 +339,7 @@ export default function ProjectDetail({ projectId, user, onNavigate }: ProjectDe
                         {env.isSecret ? '••••••••' : env.value}
                       </span>
                     </div>
-                    <button onClick={() => deleteEnvVar(env._id)} className="p-1 text-gray-500 hover:text-red-400 transition">
+                    <button onClick={() => deleteEnvVar(env.id)} className="p-1 text-gray-500 hover:text-red-400 transition">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -355,7 +355,7 @@ export default function ProjectDetail({ projectId, user, onNavigate }: ProjectDe
             {project.domains?.length > 0 ? (
               <div className="space-y-3">
                 {project.domains.map((d: any) => (
-                  <div key={d._id} className="flex items-center justify-between p-4 bg-gray-800/20 rounded-lg border border-gray-800/60">
+                  <div key={d.id} className="flex items-center justify-between p-4 bg-gray-800/20 rounded-lg border border-gray-800/60">
                     <div>
                       <div className="flex items-center space-x-2">
                         <Globe className="w-4 h-4 text-brand-400" />

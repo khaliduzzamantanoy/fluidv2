@@ -82,7 +82,7 @@ export default function ActivityPage({ user }: ActivityPageProps) {
       ) : (
         <div className="space-y-1">
           {activities.map((a: any) => (
-            <div key={a._id} className="flex items-start space-x-3 py-3 px-4 bg-[#0c1222] border border-gray-800/60 rounded-lg">
+            <div key={a.id} className="flex items-start space-x-3 py-3 px-4 bg-[#0c1222] border border-gray-800/60 rounded-lg">
               <span className="text-lg">{getActionIcon(a.category)}</span>
               <div className="flex-1 min-w-0">
                 <p className="text-xs text-white">{a.description}</p>
