@@ -1,6 +1,6 @@
 # Fluid VPS Portal
 
-A complete, self-hosted VPS management platform — like Vercel for your own server. Deploy, manage, and monitor multiple GitHub projects with auto-deploy, SSL, custom domains, and real-time analytics. Fully persistent with PostgreSQL + Prisma ORM, JWT authentication, and a beautiful dark-themed dashboard.
+A complete, self-hosted VPS management platform — like Vercel for your own server. Deploy, manage, and monitor multiple GitHub projects with auto-deploy, SSL, custom domains, and real-time analytics. Zero-dependency setup with SQLite + Prisma ORM, JWT authentication, and a beautiful dark-themed dashboard.
 
 ## Features
 
@@ -21,7 +21,7 @@ A complete, self-hosted VPS management platform — like Vercel for your own ser
 
 ### 📊 Server Monitoring
 - **Real-Time Stats** - CPU, memory, disk, PM2 process health
-- **30-Day History** - Time-series metrics stored in PostgreSQL
+- **30-Day History** - Time-series metrics stored in SQLite
 - **PM2 Integration** - Process monitoring with auto-restart
 
 ### 🔐 Security & Auth
@@ -33,7 +33,7 @@ A complete, self-hosted VPS management platform — like Vercel for your own ser
 ### 💻 Tech Stack
 - **Next.js 14** - React framework with App Router and TypeScript
 - **Fastify** - High-performance Node.js web framework
-- **PostgreSQL + Prisma** - Relational database with type-safe ORM
+- **SQLite + Prisma** - Embedded database with type-safe ORM, zero setup
 - **xterm.js** - Real-time terminal emulation for live command output
 - **Tailwind CSS** - Utility-first dark-themed UI
 - **PM2** - Process management with cluster mode support
@@ -50,7 +50,7 @@ A complete, self-hosted VPS management platform — like Vercel for your own ser
 
 ### Backend
 - **Fastify** - High-performance Node.js web framework
-- **PostgreSQL 16+** - Local database auto-installed and configured
+- **SQLite** - Embedded database, zero configuration, just a file
 - **Prisma** - Type-safe ORM with auto-generated client
 - **JWT** - JSON Web Token authentication
 - **bcryptjs** - Password hashing
@@ -65,17 +65,17 @@ The fastest way to install Fluid Portal on your Ubuntu VPS:
 
 ```bash
 curl -fsSL https://github.com/khaliduzzamantanoy/fluidv2/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 && bash install.sh
-
-> **Note:** This installer installs **PostgreSQL** (not MongoDB). The database is auto-configured and the Prisma schema is pushed automatically.
 ```
 
 This command will:
-- Install Node.js 20 LTS, PostgreSQL 16+, PM2, Nginx, and Certbot
-- Build the frontend and configure the database
+- Install Node.js 20 LTS, PM2, and Nginx
+- Build the frontend and initialize the SQLite database
 - Create a systemd service for automatic startup
 - Start the Fluid Portal on port 6776
 
-After installation, visit `http://your-vps-ip:6776` and create your admin account.
+After installation, login with:
+- **Username:** `admin`
+- **Password:** `hellofluid` (you'll be prompted to change it on first login)
 
 ### Prerequisites
 - Ubuntu 22.04+ VPS (or any Debian-based system)
@@ -121,8 +121,8 @@ PORT=6776
 HOST=0.0.0.0
 PUBLIC_URL=https://panel.yourdomain.com
 
-# PostgreSQL (auto-configured by setup:db)
-DATABASE_URL=postgresql://fluid:password@127.0.0.1:5432/fluid
+# SQLite (auto-configured by setup:db)
+DATABASE_URL=file:/opt/fluid/fluid.db
 
 # Security (auto-generated)
 JWT_SECRET=your-jwt-secret
@@ -209,7 +209,7 @@ Every operation streams live output to the terminal component:
 
 - Stats collected every 60 seconds automatically
 - View real-time CPU, memory, and process metrics
-- 30-day history stored in PostgreSQL
+- 30-day history stored in SQLite
 
 ## Development
 
@@ -238,7 +238,7 @@ fluidv2/
 │   └── schema.prisma     # Prisma schema (10 models)
 ├── server/
 │   ├── index.js          # Fastify server (entry point)
-│   ├── setup-db.js       # PostgreSQL auto-install + Prisma push
+│   ├── setup-db.js       # SQLite init + admin user creation
 │   ├── setup-first-user.js   # Admin account creation CLI
 │   ├── routes/           # API route handlers
 │   │   ├── auth.js       # Login, setup, logout
@@ -269,7 +269,7 @@ npm run build        # Build frontend for production
 npm start            # Start Fastify production server (port 6776)
 
 # Database
-npm run setup:db     # Install & configure PostgreSQL + push Prisma schema
+npm run setup:db     # Initialize SQLite database + create admin user
 npm run setup:auth   # Create admin user (CLI wizard)
 npx prisma studio    # Open Prisma Studio (DB browser)
 
@@ -287,9 +287,9 @@ systemctl restart fluid       # Restart Fluid service
 - **Check port availability**: `ss -tlnp | grep 6776`
 - **node-pty not available**: Falls back to spawn, but colors may be limited. Install with `npm rebuild node-pty`
 
-### PostgreSQL Connection Issues
+### Database Issues
 
-- **PostgreSQL not running**: `systemctl status postgresql`
+- **Database corrupted**: Delete `fluid.db` and run `npm run setup:db` from `/opt/fluid`
 - **Prisma schema not pushed**: Run `npx prisma db push` from `/opt/fluid`
 - **Connection string**: Check `.env` file for `DATABASE_URL`
 
@@ -320,7 +320,7 @@ systemctl restart fluid  # Restart Fluid
 - **Passwords**: Hashed with bcrypt (12 rounds) — never stored in plaintext
 - **Environment Variables**: Encrypted at rest using AES via crypto-js
 - **Sessions**: httpOnly cookies prevent XSS token theft
-- **PostgreSQL**: Runs locally on 127.0.0.1 with password authentication
+- **SQLite**: Local file-based database — no network exposure
 - **GitHub Tokens**: Stored in database with restricted scope; never logged
 - **Firewall**: Install.sh opens only ports 22, 80, 443, and 6776
 - **Webhooks**: SHA-256 signature verification for all incoming GitHub webhooks
