@@ -127,6 +127,14 @@ export default function Wizard({ user, onNavigate }: WizardProps) {
             body: JSON.stringify({ domain: wizardData.domain, isPrimary: true }),
           });
         }
+        try {
+          await fetch(`/api/projects/${projectId}/webhooks/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          });
+        } catch (e) {
+          console.error('Webhook registration failed (non-critical):', e);
+        }
       }
     } catch (e) {
       console.error('Failed to create project in DB:', e);

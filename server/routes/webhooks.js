@@ -14,8 +14,15 @@ export default async function webhookRoutes(fastify) {
     }
 
     const repoFullName = payload.repository.full_name;
-    const project = await prisma.project.findFirst({
+    const allProjects = await prisma.project.findMany({
       where: { deletedAt: null }
+    });
+    const project = allProjects.find(p => {
+      const repo = p.repository;
+      if (repo && typeof repo === 'object') {
+        return repo.fullName === repoFullName || repo.full_name === repoFullName;
+      }
+      return false;
     });
 
     if (!project) {
@@ -181,7 +188,15 @@ export default async function webhookRoutes(fastify) {
       return reply.status(404).send({ success: false, error: 'Project not found' });
     }
 
-    if (!project.repository?.owner || !project.repository?.repo) {
+    let owner = project.repository?.owner;
+    let repo = project.repository?.repo;
+    if (!owner || !repo) {
+      const fullName = project.repository?.fullName || project.repository?.full_name;
+      if (fullName && fullName.includes('/')) {
+        [owner, repo] = fullName.split('/');
+      }
+    }
+    if (!owner || !repo) {
       return reply.status(400).send({ success: false, error: 'Repository not configured' });
     }
 
@@ -191,7 +206,24 @@ export default async function webhookRoutes(fastify) {
     }
 
     const webhookSecret = crypto.randomBytes(32).toString('hex');
-    const baseUrl = process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 6776}`;
+    let baseUrl = process.env.PUBLIC_URL;
+    if (!baseUrl) {
+      const https = await import('https');
+      try {
+        const ip = await new Promise((resolve, reject) => {
+          https.get('https://api.ipify.org?format=json', (res) => {
+            let body = '';
+            res.on('data', c => body += c);
+            res.on('end', () => {
+              try { resolve(JSON.parse(body).ip); } catch { reject(new Error('Parse error')); }
+            });
+          }).on('error', reject);
+        });
+        baseUrl = `http://${ip}:6776`;
+      } catch (e) {
+        baseUrl = `http://localhost:${process.env.PORT || 6776}`;
+      }
+    }
 
     try {
       const https = await import('https');
@@ -210,7 +242,7 @@ export default async function webhookRoutes(fastify) {
       const ghRes = await new Promise((resolve, reject) => {
         const req = https.request({
           hostname: 'api.github.com',
-          path: `/repos/${project.repository.owner}/${project.repository.repo}/hooks`,
+          path: `/repos/${owner}/${repo}/hooks`,
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -270,7 +302,16 @@ export default async function webhookRoutes(fastify) {
       return reply.status(404).send({ success: false, error: 'Project not found' });
     }
 
-    if (project.github?.webhookId && project.repository?.owner && project.repository?.repo) {
+    let delOwner = project.repository?.owner;
+    let delRepo = project.repository?.repo;
+    if (!delOwner || !delRepo) {
+      const fullName = project.repository?.fullName || project.repository?.full_name;
+      if (fullName && fullName.includes('/')) {
+        [delOwner, delRepo] = fullName.split('/');
+      }
+    }
+
+    if (project.github?.webhookId && delOwner && delRepo) {
       const token = user.githubToken || process.env.GITHUB_TOKEN;
       if (token) {
         try {
@@ -278,7 +319,7 @@ export default async function webhookRoutes(fastify) {
           await new Promise((resolve, reject) => {
             const req = https.request({
               hostname: 'api.github.com',
-              path: `/repos/${project.repository.owner}/${project.repository.repo}/hooks/${project.github.webhookId}`,
+              path: `/repos/${delOwner}/${delRepo}/hooks/${project.github.webhookId}`,
               method: 'DELETE',
               headers: { 'Authorization': `Bearer ${token}`, 'User-Agent': 'Fluid-VPS-Portal' }
             }, (res) => { res.on('data', () => {}); res.on('end', resolve); });
