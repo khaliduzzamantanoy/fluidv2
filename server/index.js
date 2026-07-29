@@ -304,6 +304,15 @@ fastify.post('/api/system/nginx', async (request, reply) => {
     }
   }`;
   let written = false;
+  let error = null;
+  let nginxInstalled = false;
+  try {
+    const { stdout } = await import('child_process').then(cp =>
+      new Promise(r => cp.exec('which nginx 2>/dev/null', (err, stdout) => r({ stdout: stdout || '' })))
+    ).catch(() => ({ stdout: '' }));
+    nginxInstalled = stdout.trim().length > 0;
+  } catch (e) {}
+
   if (fs.existsSync('/etc/nginx/sites-available')) {
     try {
       const confPath = path.join('/etc/nginx/sites-available', domain);
@@ -313,9 +322,13 @@ fastify.post('/api/system/nginx', async (request, reply) => {
         if (!fs.existsSync(linkPath)) fs.symlinkSync(confPath, linkPath);
       }
       written = true;
-    } catch (e) {}
+    } catch (e) {
+      error = e.message;
+    }
+  } else {
+    error = 'Nginx sites-available directory not found. Is Nginx installed?';
   }
-  return reply.send({ success: true, domain, port, configPreview: nginxConfig, writtenToDisk: written });
+  return reply.send({ success: true, domain, port, configPreview: nginxConfig, writtenToDisk: written, nginxInstalled, error });
 });
 
 fastify.post('/api/system/check-domain', async (request, reply) => {

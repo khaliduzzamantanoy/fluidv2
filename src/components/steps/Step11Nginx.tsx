@@ -32,6 +32,12 @@ export default function Step11Nginx({ domain, wwwDomain, port, onNext }: Step11P
         const data = await res.json();
         if (data.success) {
           setConfig(data.configPreview);
+          if (!data.nginxInstalled) {
+            setConfig(prev => `# WARNING: Nginx does not appear to be installed on this server.\n# Run: apt-get install nginx\n\n${prev || ''}`);
+          }
+          if (data.error) {
+            setConfig(prev => `# WARNING: ${data.error}\n\n${prev || ''}`);
+          }
         }
       } catch (e) {
         setConfig(`# Reverse proxy config for ${domain}\nserver {\n    listen 80;\n    server_name ${domain} ${wwwDomain};\n    location / {\n        proxy_pass http://127.0.0.1:${port};\n    }\n}`);

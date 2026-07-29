@@ -1,33 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { CheckCircle2, ExternalLink, Trash2, ShieldCheck, Sparkles, RefreshCw, Copy, Key } from 'lucide-react';
+import { CheckCircle2, ExternalLink, ShieldCheck, Sparkles, Copy, Key, LayoutDashboard } from 'lucide-react';
 
 interface Step13Props {
   repoName: string;
   domain: string;
   port: number;
   sshKey?: string;
+  onComplete?: () => void;
 }
 
-export default function Step13Completion({ repoName, domain, port, sshKey }: Step13Props) {
-  const [cleaned, setCleaned] = useState(false);
-  const [cleaning, setCleaning] = useState(false);
+export default function Step13Completion({ repoName, domain, port, sshKey, onComplete }: Step13Props) {
   const [copied, setCopied] = useState(false);
 
   const fullDomainUrl = domain.startsWith('http') ? domain : `https://${domain}`;
-
-  const handleSelfDestruct = async () => {
-    setCleaning(true);
-    try {
-      await fetch('/api/system/cleanup', { method: 'POST' });
-      setCleaned(true);
-    } catch (e) {
-      setCleaned(true);
-    } finally {
-      setCleaning(false);
-    }
-  };
 
   const handleCopyKey = async () => {
     if (sshKey) {
@@ -37,7 +24,6 @@ export default function Step13Completion({ repoName, domain, port, sshKey }: Ste
         setTimeout(() => setCopied(false), 2000);
       } catch (err) {
         console.error('Clipboard API failed:', err);
-        // Fallback for older browsers
         try {
           const textArea = document.createElement('textarea');
           textArea.value = sshKey;
@@ -52,8 +38,6 @@ export default function Step13Completion({ repoName, domain, port, sshKey }: Ste
           if (successful) {
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
-          } else {
-            console.error('Fallback copy failed');
           }
         } catch (fallbackErr) {
           console.error('Fallback copy error:', fallbackErr);
@@ -155,38 +139,21 @@ export default function Step13Completion({ repoName, domain, port, sshKey }: Ste
           </div>
         )}
 
-        {/* Self-Destruct Banner */}
-        {!cleaned ? (
-          <div className="p-5 bg-dark-card rounded-2xl border border-gray-800 text-center space-y-3">
-            <div className="flex items-center justify-center space-x-2 text-gray-300 text-xs">
-              <ShieldCheck className="w-4 h-4 text-brand-400" />
-              <span>Fluid is a temporary wizard. You can safely stop it now.</span>
-            </div>
+        {/* Return to Dashboard */}
+        <div className="p-5 bg-dark-card rounded-2xl border border-gray-800 text-center space-y-3">
+          <div className="flex items-center justify-center space-x-2 text-gray-300 text-xs">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>Your deployment is complete and saved to the Fluid portal.</span>
+          </div>
 
-            <button
-              onClick={handleSelfDestruct}
-              disabled={cleaning}
-              className="w-full flex items-center justify-center space-x-2 py-3.5 px-6 bg-red-600/90 hover:bg-red-600 text-white font-semibold rounded-xl shadow-lg transition"
-            >
-              {cleaning ? (
-                <RefreshCw className="w-5 h-5 animate-spin" />
-              ) : (
-                <>
-                  <Trash2 className="w-4 h-4" />
-                  <span>Finish Setup & Self-Destruct Fluid</span>
-                </>
-              )}
-            </button>
-          </div>
-        ) : (
-          <div className="p-5 bg-gray-900 rounded-2xl border border-gray-800 text-center space-y-2">
-            <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
-            <h4 className="text-base font-bold text-white">Fluid Installer Terminated</h4>
-            <p className="text-xs text-gray-400">
-              Temporary files removed from <span className="font-mono text-gray-300">/tmp/fluid</span>. You can safely close this browser window.
-            </p>
-          </div>
-        )}
+          <button
+            onClick={onComplete}
+            className="w-full flex items-center justify-center space-x-2 py-3.5 px-6 bg-brand-500 hover:bg-brand-400 text-white font-semibold rounded-xl shadow-lg shadow-brand-500/20 transition"
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            <span>Return to Dashboard</span>
+          </button>
+        </div>
       </div>
     </div>
   );

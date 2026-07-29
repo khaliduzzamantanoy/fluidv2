@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Check, ShieldAlert, Cpu } from 'lucide-react';
+import { Check, ChevronLeft } from 'lucide-react';
 
 import Step1GitHubLogin from './steps/Step1GitHubLogin';
 import Step2RepoSelect from './steps/Step2RepoSelect';
@@ -20,9 +20,10 @@ import Step13Completion from './steps/Step13Completion';
 
 interface WizardProps {
   user?: any;
+  onNavigate?: (page: string) => void;
 }
 
-export default function Wizard({ user }: WizardProps) {
+export default function Wizard({ user, onNavigate }: WizardProps) {
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [wizardData, setWizardData] = useState<any>({
     githubToken: '',
@@ -75,6 +76,68 @@ export default function Wizard({ user }: WizardProps) {
     setCurrentStep((prev) => Math.min(prev + 1, 14));
   };
 
+  const goToPrev = () => {
+    setCurrentStep((prev) => Math.max(prev - 1, 1));
+  };
+
+  const createProjectInDB = async () => {
+    try {
+      const repoName = wizardData.selectedRepo?.name || 'my-project';
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: repoName,
+          repository: {
+            fullName: wizardData.selectedRepo?.fullName,
+            branch: wizardData.branch,
+            cloneUrl: wizardData.selectedRepo?.cloneUrl,
+          },
+          directory: wizardData.dirPath,
+          framework: wizardData.detection?.framework?.toLowerCase() || 'custom',
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.project) {
+        const projectId = data.project.id;
+        await fetch(`/api/projects/${projectId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            port: wizardData.port,
+            startCommand: wizardData.startCmd,
+            buildCommand: wizardData.buildCmd,
+            installCommand: wizardData.installCmd,
+            processManager: 'pm2',
+          }),
+        });
+        if (Object.keys(wizardData.envVars).length > 0) {
+          for (const [key, value] of Object.entries(wizardData.envVars)) {
+            await fetch(`/api/projects/${projectId}/env`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ key, value, isSecret: false }),
+            });
+          }
+        }
+        if (wizardData.domain) {
+          await fetch(`/api/projects/${projectId}/domains`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ domain: wizardData.domain, isPrimary: true }),
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Failed to create project in DB:', e);
+    }
+  };
+
+  const handleComplete = async () => {
+    await createProjectInDB();
+    if (onNavigate) onNavigate('projects');
+  };
+
   return (
     <div className="min-h-screen flex flex-col justify-between p-4 md:p-8 max-w-6xl mx-auto">
       {/* Top Header */}
@@ -90,14 +153,25 @@ export default function Wizard({ user }: WizardProps) {
                 VPS Assistant
               </span>
             </h1>
-            <p className="text-xs text-gray-400">One-Time Automated Deployment Wizard</p>
+            <p className="text-xs text-gray-400">Automated Deployment Wizard</p>
           </div>
         </div>
 
-        <div className="hidden md:flex items-center space-x-2 font-mono text-xs text-gray-400">
-          <span>Step {currentStep} of 14</span>
-          <span className="text-gray-600">|</span>
-          <span className="text-brand-400 font-semibold">{stepsList[currentStep - 1]}</span>
+        <div className="flex items-center space-x-4">
+          {currentStep > 1 && currentStep < 14 && (
+            <button
+              onClick={goToPrev}
+              className="flex items-center space-x-1 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800/50 rounded-lg transition"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>Back</span>
+            </button>
+          )}
+          <div className="hidden md:flex items-center space-x-2 font-mono text-xs text-gray-400">
+            <span>Step {currentStep} of 14</span>
+            <span className="text-gray-600">|</span>
+            <span className="text-brand-400 font-semibold">{stepsList[currentStep - 1]}</span>
+          </div>
         </div>
       </header>
 
@@ -260,6 +334,7 @@ export default function Wizard({ user }: WizardProps) {
               domain={wizardData.domain}
               sshKey={wizardData.sshKey}
               port={wizardData.port}
+              onComplete={handleComplete}
             />
           )}
         </div>
@@ -267,7 +342,7 @@ export default function Wizard({ user }: WizardProps) {
 
       {/* Footer */}
       <footer className="pt-6 border-t border-gray-800/80 text-center text-xs text-gray-500 space-y-1">
-        <p>FLUID Temporary VPS Deployment Assistant — Zero Database / Pure In-Memory Setup</p>
+        <p>FLUID VPS Deployment Assistant</p>
       </footer>
     </div>
   );

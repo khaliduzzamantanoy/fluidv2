@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Sliders, ArrowRight, Key, Power, RefreshCw, CheckCircle2 } from 'lucide-react';
+import Terminal from '../Terminal';
 
 interface Step12Props {
   selectedRepo: any;
@@ -15,6 +16,10 @@ export default function Step12FinalSetup({ selectedRepo, githubToken, onNext }: 
   const [processing, setProcessing] = useState(false);
   const [keyDone, setKeyDone] = useState(false);
   const [sshKey, setSshKey] = useState<string | undefined>(undefined);
+  const [autoStartDone, setAutoStartDone] = useState(false);
+  const [showAutoStartTerminal, setShowAutoStartTerminal] = useState(false);
+
+  const autoStartCmd = 'pm2 save && (pm2 startup systemd -u root --hp /root 2>/dev/null || true)';
 
   const handleFinalize = async () => {
     setProcessing(true);
@@ -29,20 +34,34 @@ export default function Step12FinalSetup({ selectedRepo, githubToken, onNext }: 
           body: JSON.stringify({ owner, repo, token: githubToken })
         });
         const data = await res.json();
-        console.log('Deploy key response:', data);
         if (data.success && data.publicKey) {
           generatedKey = data.publicKey;
           setSshKey(data.publicKey);
-          console.log('SSH key set:', data.publicKey);
         }
         setKeyDone(true);
       } catch (e) {
         console.error('Deploy key error:', e);
       }
     }
+
+    if (enableAutoStart && !autoStartDone) {
+      setShowAutoStartTerminal(true);
+      setProcessing(false);
+      return;
+    }
+
     setProcessing(false);
-    console.log('Calling onNext with sshKey:', generatedKey);
     onNext({ sshKey: generatedKey });
+  };
+
+  const handleAutoStartComplete = (success: boolean) => {
+    setAutoStartDone(true);
+    setShowAutoStartTerminal(false);
+    if (generateDeployKey && !keyDone) {
+      handleFinalize();
+    } else {
+      onNext({ sshKey });
+    }
   };
 
   return (
@@ -90,26 +109,37 @@ export default function Step12FinalSetup({ selectedRepo, githubToken, onNext }: 
                 <span className="text-sm font-semibold text-white">Enable automatic system startup</span>
               </div>
               <p className="text-xs text-gray-400">
-                Ensures PM2 and Nginx automatically boot your application if the VPS reboots.
+                Saves PM2 process list and configures systemd to resurrect PM2 on VPS reboot.
               </p>
             </div>
           </label>
         </div>
 
-        <button
-          onClick={handleFinalize}
-          disabled={processing}
-          className="w-full flex items-center justify-center space-x-2 py-3.5 px-6 bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white font-semibold rounded-xl shadow-lg transition disabled:opacity-50"
-        >
-          {processing ? (
-            <RefreshCw className="w-5 h-5 animate-spin" />
-          ) : (
-            <>
-              <span>Complete Setup & Finish</span>
-              <ArrowRight className="w-4 h-4" />
-            </>
-          )}
-        </button>
+        {showAutoStartTerminal && (
+          <div className="space-y-4">
+            <Terminal
+              command={autoStartCmd}
+              onComplete={handleAutoStartComplete}
+            />
+          </div>
+        )}
+
+        {!showAutoStartTerminal && (
+          <button
+            onClick={handleFinalize}
+            disabled={processing}
+            className="w-full flex items-center justify-center space-x-2 py-3.5 px-6 bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white font-semibold rounded-xl shadow-lg transition disabled:opacity-50"
+          >
+            {processing ? (
+              <RefreshCw className="w-5 h-5 animate-spin" />
+            ) : (
+              <>
+                <span>Complete Setup & Finish</span>
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
+          </button>
+        )}
       </div>
     </div>
   );
