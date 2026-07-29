@@ -564,10 +564,11 @@ try {
   console.log(`==================================================\n`);
 
   if (getConnectionStatus().connected) {
-    setInterval(async () => {
+    const { getPrisma } = await import('./services/database.js');
+
+    async function collectStats() {
       try {
         const os = await import('os');
-        const { getPrisma } = await import('./services/database.js');
         const prisma = getPrisma();
         const { stdout: pm2Out } = await import('child_process').then(cp =>
           new Promise(r => cp.exec('pm2 jlist 2>/dev/null || echo "[]"', (err, stdout) => r({ stdout: stdout || '[]' })))
@@ -584,11 +585,20 @@ try {
             timestamp: new Date(),
             cpu: { usage: os.loadavg()[0] / os.cpus().length * 100, loadAvg: os.loadavg(), cores: os.cpus().length },
             memory: { total: os.totalmem(), used: os.totalmem() - os.freemem(), free: os.freemem(), available: os.freemem() },
-            processes: { total: pm2Processes.length, running: pm2Processes.filter(p => p.status === 'online').length, pm2Processes }
+            disk: [],
+            network: {},
+            processes: { total: pm2Processes.length, running: pm2Processes.filter(p => p.status === 'online').length, pm2Processes },
+            docker: {}
           }
         });
-      } catch (e) {}
-    }, 60000);
+        console.log('[Stats] Collected');
+      } catch (e) {
+        console.error('[Stats] Collection failed:', e.message);
+      }
+    }
+
+    collectStats();
+    setInterval(collectStats, 60000);
   }
 
 } catch (err) {
