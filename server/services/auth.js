@@ -39,10 +39,11 @@ export function getTokenFromRequest(request) {
 
 export function getTokenCookieOptions() {
   const maxAge = 24 * 60 * 60 * 1000;
+  const isHttps = process.env.PUBLIC_URL?.startsWith('https://') || process.env.NODE_ENV !== 'production';
   return {
     path: '/',
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: false,
     sameSite: 'lax',
     maxAge
   };
