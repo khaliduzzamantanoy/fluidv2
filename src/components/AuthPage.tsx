@@ -88,14 +88,7 @@ export default function AuthPage({ onAuthenticated, mode: forcedMode, user: forc
       });
       const data = await res.json();
       if (data.success) {
-        if (data.mustChangePassword) {
-          setUsername(username);
-          setPassword('');
-          setPasswordConfirm('');
-          setMode('forceChange');
-        } else {
-          onAuthenticated(data.user, data.token);
-        }
+        onAuthenticated(data.user, data.token);
       } else {
         setError(data.error || 'Invalid credentials');
       }
