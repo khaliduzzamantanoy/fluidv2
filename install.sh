@@ -40,6 +40,10 @@ fi
 echo -e "${GREEN}[INFO] Installing PM2...${NC}"
 npm install -g pm2 >/dev/null 2>&1 || true
 
+# Enable PM2 startup to resurrect processes on reboot
+pm2 startup systemd -u root --hp /root >/dev/null 2>&1 || true
+pm2 save >/dev/null 2>&1 || true
+
 FLUID_DIR="/opt/fluid"
 echo -e "${GREEN}[3/6] Setting up Fluid at ${FLUID_DIR}...${NC}"
 
@@ -92,6 +96,7 @@ ExecStart=/usr/bin/node server/index.js
 Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
+KillMode=process
 StandardOutput=append:/var/log/fluid.log
 StandardError=append:/var/log/fluid.error.log
 

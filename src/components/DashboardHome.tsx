@@ -75,7 +75,7 @@ export default function DashboardHome({ user, onNavigate }: DashboardHomeProps) 
 
       {/* Quick Actions */}
       <div className="flex items-center space-x-3">
-        <button onClick={() => onNavigate('projects')} className="flex items-center space-x-2 px-4 py-2 bg-brand-500 hover:bg-brand-400 text-white text-sm font-semibold rounded-xl shadow-lg shadow-brand-500/20 transition">
+        <button onClick={() => onNavigate('wizard')} className="flex items-center space-x-2 px-4 py-2 bg-brand-500 hover:bg-brand-400 text-white text-sm font-semibold rounded-xl shadow-lg shadow-brand-500/20 transition">
           <Plus className="w-4 h-4" />
           <span>New Project</span>
         </button>
@@ -149,7 +149,7 @@ export default function DashboardHome({ user, onNavigate }: DashboardHomeProps) 
             <div className="text-center py-6 text-gray-500 text-xs">
               <Activity className="w-8 h-8 mx-auto mb-2 opacity-50" />
               <p>No deployments yet</p>
-              <button onClick={() => onNavigate('projects')} className="text-brand-400 hover:underline mt-1">Create a project to start</button>
+              <button onClick={() => onNavigate('wizard')} className="text-brand-400 hover:underline mt-1">Create a project to start</button>
             </div>
           )}
         </div>

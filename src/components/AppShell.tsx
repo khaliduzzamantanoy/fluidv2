@@ -15,8 +15,9 @@ import ProjectDetail from './ProjectDetail';
 import DomainPage from './DomainPage';
 import ActivityPage from './ActivityPage';
 import SettingsPage from './SettingsPage';
+import Wizard from './Wizard';
 
-export type PageView = 'dashboard' | 'projects' | 'project-detail' | 'domains' | 'activity' | 'settings';
+export type PageView = 'dashboard' | 'projects' | 'project-detail' | 'domains' | 'activity' | 'settings' | 'wizard';
 
 export default function AppShell({ user, onLogout }: { user: any; onLogout: () => void }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -59,6 +60,8 @@ export default function AppShell({ user, onLogout }: { user: any; onLogout: () =
         return <ActivityPage user={user} />;
       case 'settings':
         return <SettingsPage user={user} onLogout={onLogout} />;
+      case 'wizard':
+        return <Wizard />;
       default:
         return <DashboardHome user={user} onNavigate={navigateTo} />;
     }

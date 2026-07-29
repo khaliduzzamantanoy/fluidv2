@@ -72,7 +72,7 @@ export default function ProjectsPage({ user, onNavigate }: ProjectsPageProps) {
           <h1 className="text-xl font-bold text-white">Projects</h1>
           <p className="text-sm text-gray-400">Manage your deployed applications</p>
         </div>
-        <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="flex items-center space-x-2 px-4 py-2 bg-brand-500 hover:bg-brand-400 text-white text-sm font-semibold rounded-xl shadow-lg shadow-brand-500/20 transition">
+        <button onClick={() => onNavigate('wizard')} className="flex items-center space-x-2 px-4 py-2 bg-brand-500 hover:bg-brand-400 text-white text-sm font-semibold rounded-xl shadow-lg shadow-brand-500/20 transition">
           <Plus className="w-4 h-4" />
           <span>New Project</span>
         </button>
