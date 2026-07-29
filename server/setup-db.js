@@ -98,8 +98,8 @@ async function main() {
 
     const existing = await prisma.user.count();
     if (existing === 0) {
-      const { hash } = await import('bcryptjs');
-      const hashed = await hash('hellofluid', 12);
+      const bcrypt = (await import('bcryptjs')).default;
+      const hashed = bcrypt.hashSync('hellofluid', 12);
       await prisma.user.create({
         data: {
           username: 'admin',
