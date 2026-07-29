@@ -1,5 +1,4 @@
-import Project from '../models/Project.js';
-import ActivityLog from '../models/ActivityLog.js';
+import { getPrisma } from '../services/database.js';
 import { authenticate } from '../middleware/auth.js';
 import CryptoJS from 'crypto-js';
 
@@ -19,27 +18,32 @@ function decrypt(ciphertext) {
 }
 
 export default async function envRoutes(fastify) {
-  // List environment variables for a project
   fastify.get('/api/projects/:id/env', { preHandler: [authenticate] }, async (request, reply) => {
-    const project = await Project.findOne({ _id: request.params.id, userId: request.user._id, deletedAt: null });
+    const prisma = getPrisma();
+    const project = await prisma.project.findFirst({
+      where: { id: request.params.id, userId: request.user.id, deletedAt: null }
+    });
     if (!project) {
       return reply.status(404).send({ success: false, error: 'Project not found' });
     }
 
-    const envVars = project.envVars.map(env => ({
-      _id: env._id,
+    const envVars = await prisma.envVar.findMany({ where: { projectId: project.id } });
+    const sanitized = envVars.map(env => ({
+      id: env.id,
       key: env.key,
       value: env.isSecret ? '••••••••' : decrypt(env.value),
       isSecret: env.isSecret,
       description: env.description
     }));
 
-    return reply.send({ success: true, envVars, count: envVars.length });
+    return reply.send({ success: true, envVars: sanitized, count: sanitized.length });
   });
 
-  // Add environment variable
   fastify.post('/api/projects/:id/env', { preHandler: [authenticate] }, async (request, reply) => {
-    const project = await Project.findOne({ _id: request.params.id, userId: request.user._id, deletedAt: null });
+    const prisma = getPrisma();
+    const project = await prisma.project.findFirst({
+      where: { id: request.params.id, userId: request.user.id, deletedAt: null }
+    });
     if (!project) {
       return reply.status(404).send({ success: false, error: 'Project not found' });
     }
@@ -49,100 +53,110 @@ export default async function envRoutes(fastify) {
       return reply.status(400).send({ success: false, error: 'Key and value are required' });
     }
 
-    const existing = project.envVars.find(e => e.key === key);
+    const existing = await prisma.envVar.findFirst({ where: { projectId: project.id, key } });
     if (existing) {
       return reply.status(400).send({ success: false, error: `Environment variable '${key}' already exists` });
     }
 
-    project.envVars.push({
-      key: key.trim(),
-      value: encrypt(String(value)),
-      isSecret: isSecret || false,
-      description: description || ''
+    await prisma.envVar.create({
+      data: {
+        projectId: project.id,
+        key: key.trim(),
+        value: encrypt(String(value)),
+        isSecret: isSecret || false,
+        description: description || ''
+      }
     });
 
-    await project.save();
-
-    await ActivityLog.create({
-      userId: request.user._id,
-      projectId: project._id,
-      action: 'env.add',
-      category: 'env',
-      description: `Added environment variable ${key} to ${project.name}`,
-      ip: request.ip,
-      userAgent: request.headers['user-agent']
+    await prisma.activityLog.create({
+      data: {
+        userId: request.user.id,
+        projectId: project.id,
+        action: 'env.add',
+        category: 'env',
+        description: `Added environment variable ${key} to ${project.name}`,
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      }
     });
 
     return reply.status(201).send({ success: true, envVar: { key, isSecret, description } });
   });
 
-  // Update environment variable
   fastify.put('/api/projects/:id/env/:envId', { preHandler: [authenticate] }, async (request, reply) => {
-    const project = await Project.findOne({ _id: request.params.id, userId: request.user._id, deletedAt: null });
+    const prisma = getPrisma();
+    const project = await prisma.project.findFirst({
+      where: { id: request.params.id, userId: request.user.id, deletedAt: null }
+    });
     if (!project) {
       return reply.status(404).send({ success: false, error: 'Project not found' });
     }
 
-    const env = project.envVars.id(request.params.envId);
+    const env = await prisma.envVar.findFirst({ where: { id: request.params.envId, projectId: project.id } });
     if (!env) {
       return reply.status(404).send({ success: false, error: 'Environment variable not found' });
     }
 
     const { value, isSecret, description } = request.body || {};
+    const updateData = {};
 
-    if (value !== undefined) {
-      env.value = encrypt(String(value));
-    }
-    if (isSecret !== undefined) env.isSecret = isSecret;
-    if (description !== undefined) env.description = description;
+    if (value !== undefined) updateData.value = encrypt(String(value));
+    if (isSecret !== undefined) updateData.isSecret = isSecret;
+    if (description !== undefined) updateData.description = description;
 
-    await project.save();
+    const updated = await prisma.envVar.update({ where: { id: env.id }, data: updateData });
 
-    await ActivityLog.create({
-      userId: request.user._id,
-      projectId: project._id,
-      action: 'env.update',
-      category: 'env',
-      description: `Updated environment variable ${env.key} on ${project.name}`,
-      ip: request.ip,
-      userAgent: request.headers['user-agent']
+    await prisma.activityLog.create({
+      data: {
+        userId: request.user.id,
+        projectId: project.id,
+        action: 'env.update',
+        category: 'env',
+        description: `Updated environment variable ${env.key} on ${project.name}`,
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      }
     });
 
-    return reply.send({ success: true, envVar: { _id: env._id, key: env.key, isSecret: env.isSecret, description: env.description } });
+    return reply.send({ success: true, envVar: { id: updated.id, key: env.key, isSecret: updated.isSecret, description: updated.description } });
   });
 
-  // Delete environment variable
   fastify.delete('/api/projects/:id/env/:envId', { preHandler: [authenticate] }, async (request, reply) => {
-    const project = await Project.findOne({ _id: request.params.id, userId: request.user._id, deletedAt: null });
+    const prisma = getPrisma();
+    const project = await prisma.project.findFirst({
+      where: { id: request.params.id, userId: request.user.id, deletedAt: null }
+    });
     if (!project) {
       return reply.status(404).send({ success: false, error: 'Project not found' });
     }
 
-    const env = project.envVars.id(request.params.envId);
+    const env = await prisma.envVar.findFirst({ where: { id: request.params.envId, projectId: project.id } });
     if (!env) {
       return reply.status(404).send({ success: false, error: 'Environment variable not found' });
     }
 
-    const key = env.key;
-    project.envVars.pull({ _id: request.params.envId });
-    await project.save();
+    await prisma.envVar.delete({ where: { id: env.id } });
 
-    await ActivityLog.create({
-      userId: request.user._id,
-      projectId: project._id,
-      action: 'env.delete',
-      category: 'env',
-      description: `Deleted environment variable ${key} from ${project.name}`,
-      ip: request.ip,
-      userAgent: request.headers['user-agent']
+    await prisma.activityLog.create({
+      data: {
+        userId: request.user.id,
+        projectId: project.id,
+        action: 'env.delete',
+        category: 'env',
+        description: `Deleted environment variable ${env.key} from ${project.name}`,
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      }
     });
 
-    return reply.send({ success: true, removed: key });
+    return reply.send({ success: true, removed: env.key });
   });
 
-  // Bulk update environment variables
   fastify.put('/api/projects/:id/env/bulk', { preHandler: [authenticate] }, async (request, reply) => {
-    const project = await Project.findOne({ _id: request.params.id, userId: request.user._id, deletedAt: null });
+    const prisma = getPrisma();
+    const project = await prisma.project.findFirst({
+      where: { id: request.params.id, userId: request.user.id, deletedAt: null }
+    });
     if (!project) {
       return reply.status(404).send({ success: false, error: 'Project not found' });
     }
@@ -153,31 +167,39 @@ export default async function envRoutes(fastify) {
     }
 
     for (const v of vars) {
-      const existing = project.envVars.find(e => e.key === v.key);
+      const existing = await prisma.envVar.findFirst({ where: { projectId: project.id, key: v.key } });
       if (existing) {
-        existing.value = encrypt(String(v.value));
-        if (v.isSecret !== undefined) existing.isSecret = v.isSecret;
-        if (v.description !== undefined) existing.description = v.description;
+        await prisma.envVar.update({
+          where: { id: existing.id },
+          data: {
+            value: encrypt(String(v.value)),
+            ...(v.isSecret !== undefined ? { isSecret: v.isSecret } : {}),
+            ...(v.description !== undefined ? { description: v.description } : {})
+          }
+        });
       } else {
-        project.envVars.push({
-          key: v.key.trim(),
-          value: encrypt(String(v.value)),
-          isSecret: v.isSecret || false,
-          description: v.description || ''
+        await prisma.envVar.create({
+          data: {
+            projectId: project.id,
+            key: v.key.trim(),
+            value: encrypt(String(v.value)),
+            isSecret: v.isSecret || false,
+            description: v.description || ''
+          }
         });
       }
     }
 
-    await project.save();
-
-    await ActivityLog.create({
-      userId: request.user._id,
-      projectId: project._id,
-      action: 'env.bulk_update',
-      category: 'env',
-      description: `Bulk updated ${vars.length} environment variables for ${project.name}`,
-      ip: request.ip,
-      userAgent: request.headers['user-agent']
+    await prisma.activityLog.create({
+      data: {
+        userId: request.user.id,
+        projectId: project.id,
+        action: 'env.bulk_update',
+        category: 'env',
+        description: `Bulk updated ${vars.length} environment variables for ${project.name}`,
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      }
     });
 
     return reply.send({ success: true, count: vars.length });

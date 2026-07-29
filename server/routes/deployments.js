@@ -1,91 +1,106 @@
-import Deployment from '../models/Deployment.js';
-import Project from '../models/Project.js';
-import ActivityLog from '../models/ActivityLog.js';
+import { getPrisma } from '../services/database.js';
 import { authenticate } from '../middleware/auth.js';
 
 export default async function deploymentRoutes(fastify) {
-  // Get deployment details
   fastify.get('/api/deployments/:id', { preHandler: [authenticate] }, async (request, reply) => {
-    const deployment = await Deployment.findById(request.params.id)
-      .populate('projectId', 'name slug')
-      .populate('userId', 'username');
+    const prisma = getPrisma();
+    const deployment = await prisma.deployment.findUnique({
+      where: { id: request.params.id },
+      include: {
+        project: { select: { name: true, slug: true } },
+        user: { select: { username: true } }
+      }
+    });
     if (!deployment) {
       return reply.status(404).send({ success: false, error: 'Deployment not found' });
     }
     return reply.send({ success: true, deployment });
   });
 
-  // Get deployment logs (paginated chunks)
   fastify.get('/api/deployments/:id/logs', { preHandler: [authenticate] }, async (request, reply) => {
-    const deployment = await Deployment.findById(request.params.id);
+    const prisma = getPrisma();
+    const deployment = await prisma.deployment.findUnique({
+      where: { id: request.params.id },
+      select: { logChunks: true }
+    });
     if (!deployment) {
       return reply.status(404).send({ success: false, error: 'Deployment not found' });
     }
 
+    const logChunks = Array.isArray(deployment.logChunks) ? deployment.logChunks : [];
     const chunk = parseInt(request.query.chunk) || 0;
     const limit = parseInt(request.query.limit) || 100;
-    const logs = deployment.logChunks
+    const logs = logChunks
       .filter(l => l.sequence >= chunk * limit && l.sequence < (chunk + 1) * limit)
       .map(l => ({ seq: l.sequence, content: l.content, stream: l.stream, ts: l.timestamp }));
 
     return reply.send({
       success: true,
       logs,
-      total: deployment.logChunks.length,
+      total: logChunks.length,
       chunk,
-      hasMore: (chunk + 1) * limit < deployment.logChunks.length
+      hasMore: (chunk + 1) * limit < logChunks.length
     });
   });
 
-  // Trigger new deployment
   fastify.post('/api/projects/:id/deploy', { preHandler: [authenticate] }, async (request, reply) => {
-    const project = await Project.findOne({ _id: request.params.id, userId: request.user._id });
+    const prisma = getPrisma();
+    const project = await prisma.project.findFirst({
+      where: { id: request.params.id, userId: request.user.id }
+    });
     if (!project) {
       return reply.status(404).send({ success: false, error: 'Project not found' });
     }
 
     const { branch, commitSha, commitMessage } = request.body || {};
 
-    const deployment = await Deployment.create({
-      projectId: project._id,
-      userId: request.user._id,
-      trigger: 'manual',
-      triggerMetadata: {
-        commitSha: commitSha || 'manual',
-        commitMessage: commitMessage || 'Manual deployment',
-        branch: branch || project.repository.branch
-      },
-      status: 'queued',
-      environment: 'production'
+    const deployment = await prisma.deployment.create({
+      data: {
+        projectId: project.id,
+        userId: request.user.id,
+        trigger: 'manual',
+        triggerMetadata: {
+          commitSha: commitSha || 'manual',
+          commitMessage: commitMessage || 'Manual deployment',
+          branch: branch || project.repository?.branch || 'main'
+        },
+        status: 'queued',
+        environment: 'production'
+      }
     });
 
-    project.status = 'deploying';
-    project.lastDeployedAt = new Date();
-    project.deploymentCount += 1;
-    await project.save();
-
-    await ActivityLog.create({
-      userId: request.user._id,
-      projectId: project._id,
-      action: 'deployment.start',
-      category: 'deployment',
-      description: `Started deployment for ${project.name}`,
-      metadata: { deploymentId: deployment._id, trigger: 'manual' },
-      ip: request.ip,
-      userAgent: request.headers['user-agent']
+    await prisma.project.update({
+      where: { id: project.id },
+      data: {
+        status: 'deploying',
+        lastDeployedAt: new Date(),
+        deploymentCount: { increment: 1 }
+      }
     });
 
-    // Execute deployment in background
-    executeDeployment(deployment._id, project).catch(err => {
+    await prisma.activityLog.create({
+      data: {
+        userId: request.user.id,
+        projectId: project.id,
+        action: 'deployment.start',
+        category: 'deployment',
+        description: `Started deployment for ${project.name}`,
+        metadata: { deploymentId: deployment.id, trigger: 'manual' },
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      }
+    });
+
+    executeDeployment(deployment.id, project).catch(err => {
       console.error('[Deploy] Background execution error:', err.message);
     });
 
     return reply.status(201).send({ success: true, deployment });
   });
 
-  // Cancel deployment
   fastify.post('/api/deployments/:id/cancel', { preHandler: [authenticate] }, async (request, reply) => {
-    const deployment = await Deployment.findById(request.params.id);
+    const prisma = getPrisma();
+    const deployment = await prisma.deployment.findUnique({ where: { id: request.params.id } });
     if (!deployment) {
       return reply.status(404).send({ success: false, error: 'Deployment not found' });
     }
@@ -94,23 +109,27 @@ export default async function deploymentRoutes(fastify) {
       return reply.status(400).send({ success: false, error: 'Deployment already finished' });
     }
 
-    deployment.status = 'cancelled';
-    deployment.cancelledAt = new Date();
-    deployment.cancelledBy = request.user._id;
-    await deployment.save();
+    await prisma.deployment.update({
+      where: { id: deployment.id },
+      data: { status: 'cancelled', cancelledAt: new Date(), cancelledBy: request.user.id }
+    });
 
     return reply.send({ success: true, deployment });
   });
 
-  // Rollback to previous deployment
   fastify.post('/api/projects/:id/rollback', { preHandler: [authenticate] }, async (request, reply) => {
-    const project = await Project.findOne({ _id: request.params.id, userId: request.user._id });
+    const prisma = getPrisma();
+    const project = await prisma.project.findFirst({
+      where: { id: request.params.id, userId: request.user.id }
+    });
     if (!project) {
       return reply.status(404).send({ success: false, error: 'Project not found' });
     }
 
-    const targetDeployment = await Deployment.findById(request.body?.deploymentId);
-    if (!targetDeployment || targetDeployment.projectId.toString() !== project._id.toString()) {
+    const targetDeployment = await prisma.deployment.findUnique({
+      where: { id: request.body?.deploymentId }
+    });
+    if (!targetDeployment || targetDeployment.projectId !== project.id) {
       return reply.status(404).send({ success: false, error: 'Target deployment not found' });
     }
 
@@ -118,30 +137,34 @@ export default async function deploymentRoutes(fastify) {
       return reply.status(400).send({ success: false, error: 'Can only rollback to successful deployments' });
     }
 
-    const deployment = await Deployment.create({
-      projectId: project._id,
-      userId: request.user._id,
-      trigger: 'rollback',
-      triggerMetadata: {
-        commitSha: targetDeployment.commitSha,
-        commitMessage: `Rollback to ${targetDeployment.commitSha?.substring(0, 7) || 'previous'}`
-      },
-      status: 'queued',
-      previousDeploymentId: targetDeployment._id,
-      environment: 'production'
+    const deployment = await prisma.deployment.create({
+      data: {
+        projectId: project.id,
+        userId: request.user.id,
+        trigger: 'rollback',
+        triggerMetadata: {
+          commitSha: targetDeployment.commitSha,
+          commitMessage: `Rollback to ${targetDeployment.commitSha?.substring(0, 7) || 'previous'}`
+        },
+        status: 'queued',
+        previousDeploymentId: targetDeployment.id,
+        environment: 'production'
+      }
     });
 
-    await ActivityLog.create({
-      userId: request.user._id,
-      projectId: project._id,
-      action: 'deployment.rollback',
-      category: 'deployment',
-      description: `Rollback to deployment ${targetDeployment._id}`,
-      ip: request.ip,
-      userAgent: request.headers['user-agent']
+    await prisma.activityLog.create({
+      data: {
+        userId: request.user.id,
+        projectId: project.id,
+        action: 'deployment.rollback',
+        category: 'deployment',
+        description: `Rollback to deployment ${targetDeployment.id}`,
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      }
     });
 
-    return reply.send({ success: true, deployment, rollbackTo: targetDeployment._id });
+    return reply.send({ success: true, deployment, rollbackTo: targetDeployment.id });
   });
 }
 
@@ -150,37 +173,37 @@ async function executeDeployment(deploymentId, project) {
   const util = await import('util');
   const execPromise = util.promisify(exec);
   const fs = await import('fs');
+  const { getPrisma } = await import('../services/database.js');
 
   const updateStatus = async (status, stage) => {
-    await Deployment.findByIdAndUpdate(deploymentId, { status, stage });
+    const prisma = getPrisma();
+    await prisma.deployment.update({ where: { id: deploymentId }, data: { status, stage } });
   };
 
   const appendLog = async (content, stream = 'stdout') => {
-    const deployment = await Deployment.findById(deploymentId);
+    const prisma = getPrisma();
+    const deployment = await prisma.deployment.findUnique({ where: { id: deploymentId } });
     if (!deployment) return;
-    const sequence = deployment.logChunks.length;
-    deployment.logChunks.push({ sequence, content, stream, timestamp: new Date() });
-    await deployment.save();
+    const logChunks = Array.isArray(deployment.logChunks) ? deployment.logChunks : [];
+    const sequence = logChunks.length;
+    logChunks.push({ sequence, content, stream, timestamp: new Date().toISOString() });
+    await prisma.deployment.update({ where: { id: deploymentId }, data: { logChunks } });
   };
 
   const updateStage = async (name, status, error = null) => {
-    const deployment = await Deployment.findById(deploymentId);
+    const prisma = getPrisma();
+    const deployment = await prisma.deployment.findUnique({ where: { id: deploymentId } });
     if (!deployment) return;
-    const idx = deployment.stages.findIndex(s => s.name === name);
+    const stages = Array.isArray(deployment.stages) ? deployment.stages : [];
+    const idx = stages.findIndex(s => s.name === name);
     if (idx >= 0) {
-      deployment.stages[idx].status = status;
-      deployment.stages[idx].finishedAt = new Date();
-      if (error) deployment.stages[idx].error = error;
+      stages[idx].status = status;
+      stages[idx].finishedAt = new Date().toISOString();
+      if (error) stages[idx].error = error;
     } else {
-      deployment.stages.push({
-        name, status,
-        startedAt: new Date(),
-        finishedAt: new Date(),
-        logs: '',
-        error
-      });
+      stages.push({ name, status, startedAt: new Date().toISOString(), finishedAt: new Date().toISOString(), logs: '', error });
     }
-    await deployment.save();
+    await prisma.deployment.update({ where: { id: deploymentId }, data: { stages } });
   };
 
   const executeCommand = async (cmd, stageName, cwd) => {
@@ -206,39 +229,29 @@ async function executeDeployment(deploymentId, project) {
     const startTime = Date.now();
     const dir = project.directory;
 
-    // Stage 1: Clone / Pull
     if (project.repository?.url) {
       const repoUrl = project.repository.cloneUrl || project.repository.url;
-      let cloneResult;
       if (fs.existsSync(dir)) {
-        cloneResult = await executeCommand(
+        await executeCommand(
           `cd ${dir} && git fetch origin && git reset --hard origin/${project.repository.branch}`,
           'pull', dir
         );
       } else {
-        cloneResult = await executeCommand(
+        await executeCommand(
           `mkdir -p ${dir} && git clone --depth 1 -b ${project.repository.branch} ${repoUrl} ${dir}`,
           'clone', '/tmp'
         );
-        // Restore node_modules from cache if available
       }
-      if (!cloneResult) throw new Error('Git operation failed');
     }
 
-    // Stage 2: Install dependencies
-    const installOk = await executeCommand(
-      project.installCommand || 'npm install',
-      'install', dir
-    );
+    const installOk = await executeCommand(project.installCommand || 'npm install', 'install', dir);
     if (!installOk) throw new Error('Installation failed');
 
-    // Stage 3: Build
     if (project.buildCommand) {
       const buildOk = await executeCommand(project.buildCommand, 'build', dir);
       if (!buildOk) throw new Error('Build failed');
     }
 
-    // Stage 4: Deploy / Restart process
     const deployStage = project.processManager === 'pm2' ? 'restart_pm2' :
       project.processManager === 'docker' ? 'docker_deploy' : 'restart_service';
 
@@ -247,50 +260,37 @@ async function executeDeployment(deploymentId, project) {
       if (project.startCommand) {
         const appName = project.slug;
         deployOk = await executeCommand(
-          `pm2 delete ${appName} 2>/dev/null; pm2 start ${project.startCommand} --name "${appName}" -i ${project.pm2Config?.instances || 1} -- ${project.port ? `--port=${project.port}` : ''}`,
+          `pm2 delete ${appName} 2>/dev/null; pm2 start ${project.startCommand} --name "${appName}" -i ${project.pm2Config?.instances || 1}`,
           deployStage, dir
         );
       }
     } else if (project.processManager === 'docker') {
-      deployOk = await executeCommand(
-        `cd ${dir} && docker compose up -d --build`,
-        deployStage, dir
-      );
+      deployOk = await executeCommand(`cd ${dir} && docker compose up -d --build`, deployStage, dir);
     } else {
-      deployOk = await executeCommand(
-        `cd ${dir} && ${project.startCommand || 'npm start'} &`,
-        deployStage, dir
-      );
+      deployOk = await executeCommand(`cd ${dir} && ${project.startCommand || 'npm start'} &`, deployStage, dir);
     }
 
     if (!deployOk) throw new Error('Deploy stage failed');
 
-    // Success
     const duration = Date.now() - startTime;
-    await Deployment.findByIdAndUpdate(deploymentId, {
-      status: 'success',
-      finishedAt: new Date(),
-      duration,
-      exitCode: 0
+    const prisma = getPrisma();
+    await prisma.deployment.update({
+      where: { id: deploymentId },
+      data: { status: 'success', finishedAt: new Date(), duration, exitCode: 0 }
     });
-
-    await Project.findByIdAndUpdate(project._id, {
-      status: 'active',
-      lastSuccessfulDeployAt: new Date(),
-      totalBuildTime: (project.totalBuildTime || 0) + duration
+    await prisma.project.update({
+      where: { id: project.id },
+      data: { status: 'active', lastSuccessfulDeployAt: new Date(), totalBuildTime: (project.totalBuildTime || 0) + duration }
     });
-
     await appendLog(`\n\x1b[32m✓ Deployment successful (${(duration / 1000).toFixed(1)}s)\x1b[0m\n`);
 
   } catch (err) {
-    await Deployment.findByIdAndUpdate(deploymentId, {
-      status: 'failed',
-      finishedAt: new Date(),
-      exitCode: 1,
-      error: err.message
+    const prisma = getPrisma();
+    await prisma.deployment.update({
+      where: { id: deploymentId },
+      data: { status: 'failed', finishedAt: new Date(), exitCode: 1, error: err.message }
     });
-
-    await Project.findByIdAndUpdate(project._id, { status: 'error' });
+    await prisma.project.update({ where: { id: project.id }, data: { status: 'error' } });
     await appendLog(`\n\x1b[31m✗ Deployment failed: ${err.message}\x1b[0m\n`, 'stderr');
   }
 }

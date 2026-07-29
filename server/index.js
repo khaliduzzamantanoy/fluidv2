@@ -15,7 +15,6 @@ import https from 'https';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load .env
 const envPath = path.join(__dirname, '../.env');
 if (fs.existsSync(envPath)) {
   const content = fs.readFileSync(envPath, 'utf8');
@@ -32,13 +31,12 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-// Initialize Fastify
-const fastify = Fastify({ 
+const fastify = Fastify({
   logger: true,
-  bodyLimit: 10 * 1024 * 1024 // 10MB for webhook payloads
+  bodyLimit: 10 * 1024 * 1024
 });
 
-await fastify.register(fastifyCors, { 
+await fastify.register(fastifyCors, {
   origin: process.env.CORS_ORIGIN || true,
   credentials: true
 });
@@ -47,23 +45,21 @@ await fastify.register(fastifyCookie, {
 });
 await fastify.register(fastifyWebsocket);
 
-// ----------------------------------------------------
-// MongoDB Connection
-// ----------------------------------------------------
 let dbConnected = false;
 try {
   const { connectDatabase } = await import('./services/database.js');
-  await connectDatabase();
-  dbConnected = true;
-  console.log('[Server] MongoDB connected');
+  const prisma = await connectDatabase();
+  dbConnected = !!prisma;
+  if (dbConnected) {
+    console.log('[Server] Database connected');
+  } else {
+    console.warn('[Server] Running without database. Some features will be unavailable.');
+  }
 } catch (err) {
-  console.warn('[Server] MongoDB not available:', err.message);
+  console.warn('[Server] Database not available:', err.message);
   console.warn('[Server] Running without database. Some features will be unavailable.');
 }
 
-// ----------------------------------------------------
-// Route Registration
-// ----------------------------------------------------
 if (dbConnected) {
   try {
     const authRoutes = (await import('./routes/auth.js')).default;
@@ -89,12 +85,8 @@ if (dbConnected) {
   }
 }
 
-// ----------------------------------------------------
-// In-memory session state (legacy compatibility)
-// ----------------------------------------------------
 const sessionState = { githubToken: null, vpsIp: null };
 
-// Helper: HTTP request wrapper
 function httpRequest(url, options = {}, data = null) {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(url);
@@ -121,11 +113,6 @@ function httpRequest(url, options = {}, data = null) {
   });
 }
 
-// ----------------------------------------------------
-// LEGACY API ENDPOINTS (backward compatible)
-// ----------------------------------------------------
-
-// STEP 1: GitHub Device Authorization
 fastify.post('/api/github/device-code', async (request, reply) => {
   const { clientId } = request.body || {};
   const DEFAULT_CLIENT_ID = 'Ov23lixc10ZT3lahfJtf';
@@ -148,11 +135,13 @@ fastify.post('/api/github/poll-token', async (request, reply) => {
     }, { client_id: clientId, device_code: deviceCode, grant_type: 'urn:ietf:params:oauth:grant-type:device_code' });
     if (res.data?.access_token) {
       sessionState.githubToken = res.data.access_token;
-      // Also save to user if authenticated
       if (dbConnected && request.user?.githubToken !== res.data.access_token) {
         try {
-          const User = (await import('./models/User.js')).default;
-          await User.findByIdAndUpdate(request.user?._id, { githubToken: res.data.access_token });
+          const { getPrisma } = await import('./services/database.js');
+          await getPrisma().user.update({
+            where: { id: request.user.id },
+            data: { githubToken: res.data.access_token }
+          });
         } catch (e) {}
       }
       return reply.send({ success: true, accessToken: res.data.access_token });
@@ -163,7 +152,6 @@ fastify.post('/api/github/poll-token', async (request, reply) => {
   }
 });
 
-// STEP 2: Repository & Branch
 fastify.get('/api/github/repos', async (request, reply) => {
   const token = request.headers.authorization?.replace('Bearer ', '') || sessionState.githubToken;
   if (!token) return reply.status(401).send({ success: false, error: 'Unauthorized' });
@@ -200,7 +188,6 @@ fastify.get('/api/github/branches', async (request, reply) => {
   }
 });
 
-// STEP 3: Directory check
 fastify.post('/api/system/check-dir', async (request, reply) => {
   const { dirPath } = request.body || {};
   if (!dirPath) return reply.status(400).send({ success: false, error: 'Directory path required' });
@@ -213,7 +200,6 @@ fastify.post('/api/system/check-dir', async (request, reply) => {
   return reply.send({ success: true, path: normalized, exists, isEmpty });
 });
 
-// STEP 4: Project detection
 fastify.post('/api/deploy/detect', async (request, reply) => {
   const { dirPath } = request.body || {};
   const targetDir = dirPath ? path.normalize(dirPath) : process.cwd();
@@ -269,7 +255,6 @@ fastify.post('/api/deploy/detect', async (request, reply) => {
   return reply.send({ success: true, detection });
 });
 
-// STEP 8: IP detection
 fastify.get('/api/system/ip', async (request, reply) => {
   try {
     const res = await httpRequest('https://api.ipify.org?format=json');
@@ -281,7 +266,6 @@ fastify.get('/api/system/ip', async (request, reply) => {
   }
 });
 
-// STEP 9: DNS check
 fastify.post('/api/system/check-dns', async (request, reply) => {
   const { domain, wwwDomain, expectedIp } = request.body || {};
   if (!domain) return reply.status(400).send({ success: false, error: 'Domain required' });
@@ -305,7 +289,6 @@ fastify.post('/api/system/check-dns', async (request, reply) => {
   return reply.send({ success: results.domain.matches || results.domain.resolved.length > 0, expectedIp: vpsIp, results });
 });
 
-// STEP 11: Nginx config generator (legacy)
 fastify.post('/api/system/nginx', async (request, reply) => {
   const { domain, wwwDomain, port } = request.body || {};
   if (!domain || !port) return reply.status(400).send({ success: false, error: 'Domain and port required' });
@@ -341,7 +324,6 @@ fastify.post('/api/system/nginx', async (request, reply) => {
   return reply.send({ success: true, domain, port, configPreview: nginxConfig, writtenToDisk: written });
 });
 
-// Domain accessibility check
 fastify.post('/api/system/check-domain', async (request, reply) => {
   const { domain } = request.body || {};
   if (!domain) return reply.status(400).send({ success: false, error: 'Domain required' });
@@ -354,7 +336,6 @@ fastify.post('/api/system/check-domain', async (request, reply) => {
   }
 });
 
-// SSH Deploy Key generation
 fastify.post('/api/system/deploy-key', async (request, reply) => {
   const { owner, repo, token } = request.body || {};
   const activeToken = token || sessionState.githubToken;
@@ -379,7 +360,6 @@ fastify.post('/api/system/deploy-key', async (request, reply) => {
   });
 });
 
-// Cleanup / Self-destruct
 fastify.post('/api/system/cleanup', async (request, reply) => {
   reply.send({ success: true, message: 'Cleanup initiated' });
   setTimeout(() => {
@@ -398,12 +378,10 @@ fastify.post('/api/system/cleanup', async (request, reply) => {
   }, 1500);
 });
 
-// WebSocket test
 fastify.get('/ws-test', (request, reply) => {
   reply.send({ status: 'WebSocket available', endpoint: '/ws/terminal', serverTime: new Date().toISOString() });
 });
 
-// Port check
 fastify.post('/api/check-port', async (request, reply) => {
   const { port } = request.body || {};
   if (!port) return reply.status(400).send({ success: false, error: 'Port required' });
@@ -420,7 +398,6 @@ fastify.post('/api/check-port', async (request, reply) => {
   }
 });
 
-// Kill port
 fastify.post('/api/kill-port', async (request, reply) => {
   const { port } = request.body || {};
   if (!port) return reply.status(400).send({ success: false, error: 'Port required' });
@@ -441,7 +418,6 @@ fastify.post('/api/kill-port', async (request, reply) => {
   }
 });
 
-// REST API command execution (fallback)
 fastify.post('/api/execute', async (request, reply) => {
   const { command, cwd } = request.body || {};
   if (!command) return reply.status(400).send({ success: false, error: 'No command provided' });
@@ -464,9 +440,6 @@ fastify.post('/api/execute', async (request, reply) => {
   }
 });
 
-// ----------------------------------------------------
-// WEBSOCKET TERMINAL (LIVE STREAMING)
-// ----------------------------------------------------
 fastify.register(async function (fastifyApp) {
   fastifyApp.get('/ws/terminal', { websocket: true }, (connection, req) => {
     console.log('[WS] Terminal connection established');
@@ -540,9 +513,6 @@ fastify.register(async function (fastifyApp) {
   });
 });
 
-// ----------------------------------------------------
-// STATIC FILE SERVING
-// ----------------------------------------------------
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'application/javascript', '.css': 'text/css',
   '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml',
@@ -560,7 +530,6 @@ function findOutDir() {
 }
 
 fastify.get('/*', async (request, reply) => {
-  // Skip API/WS routes
   if (request.url.startsWith('/api/') || request.url.startsWith('/ws')) return;
 
   const outDir = findOutDir();
@@ -588,9 +557,6 @@ fastify.get('/*', async (request, reply) => {
   return reply.status(404).send('<h1>FLUID: Frontend not built. Run npm run build first.</h1>');
 });
 
-// ----------------------------------------------------
-// START SERVER
-// ----------------------------------------------------
 const PORT = parseInt(process.env.PORT) || 6776;
 const HOST = process.env.HOST || '0.0.0.0';
 
@@ -602,13 +568,13 @@ try {
   console.log(`  Status: ${dbConnected ? 'Database connected' : 'No database'}`);
   console.log(`==================================================\n`);
 
-  // Start server stats collection every 60 seconds (if DB connected)
   if (dbConnected) {
     setInterval(async () => {
       try {
         const os = await import('os');
-        const ServerStats = (await import('./models/ServerStats.js')).default;
-        const { stdout: pm2Out } = await import('child_process').then(cp => 
+        const { getPrisma } = await import('./services/database.js');
+        const prisma = getPrisma();
+        const { stdout: pm2Out } = await import('child_process').then(cp =>
           new Promise(r => cp.exec('pm2 jlist 2>/dev/null || echo "[]"', (err, stdout) => r({ stdout: stdout || '[]' })))
         ).catch(() => ({ stdout: '[]' }));
 
@@ -618,11 +584,13 @@ try {
           status: p.pm2_env?.status || 'unknown', uptime: p.pm2_env?.pm_uptime ? Date.now() - p.pm2_env.pm_uptime : 0, restarts: p.pm2_env?.restart_time || 0
         })); } catch (e) {}
 
-        await ServerStats.create({
-          timestamp: new Date(),
-          cpu: { usage: os.loadavg()[0] / os.cpus().length * 100, loadAvg: os.loadavg(), cores: os.cpus().length },
-          memory: { total: os.totalmem(), used: os.totalmem() - os.freemem(), free: os.freemem(), available: os.freemem() },
-          processes: { total: pm2Processes.length, running: pm2Processes.filter(p => p.status === 'online').length, pm2Processes }
+        await prisma.serverStats.create({
+          data: {
+            timestamp: new Date(),
+            cpu: { usage: os.loadavg()[0] / os.cpus().length * 100, loadAvg: os.loadavg(), cores: os.cpus().length },
+            memory: { total: os.totalmem(), used: os.totalmem() - os.freemem(), free: os.freemem(), available: os.freemem() },
+            processes: { total: pm2Processes.length, running: pm2Processes.filter(p => p.status === 'online').length, pm2Processes }
+          }
         });
       } catch (e) {}
     }, 60000);

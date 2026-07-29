@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -7,6 +7,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let isConnected = false;
+
+const prisma = new PrismaClient();
 
 function loadEnv() {
   const envPath = path.join(__dirname, '../../.env');
@@ -19,9 +21,7 @@ function loadEnv() {
         if (eqIndex > 0) {
           const key = trimmed.substring(0, eqIndex).trim();
           const value = trimmed.substring(eqIndex + 1).trim();
-          if (!process.env[key]) {
-            process.env[key] = value;
-          }
+          if (!process.env[key]) process.env[key] = value;
         }
       }
     }
@@ -29,52 +29,54 @@ function loadEnv() {
 }
 
 export async function connectDatabase() {
-  if (isConnected) return;
+  if (isConnected) return prisma;
 
   loadEnv();
 
-  const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/fluid';
   const maxRetries = 5;
   let retryCount = 0;
 
   while (retryCount < maxRetries) {
     try {
-      await mongoose.connect(uri, {
-        serverSelectionTimeoutMS: 5000,
-        connectTimeoutMS: 5000,
-        heartbeatFrequencyMS: 10000
-      });
+      await prisma.$connect();
       isConnected = true;
-      console.log('[DB] MongoDB connected successfully');
-      return;
+      console.log('[DB] PostgreSQL connected successfully');
+      return prisma;
     } catch (err) {
       retryCount++;
-      console.error(`[DB] MongoDB connection attempt ${retryCount}/${maxRetries} failed:`, err.message);
+      console.error(`[DB] Database connection attempt ${retryCount}/${maxRetries} failed:`, err.message);
       if (retryCount >= maxRetries) {
         console.error('[DB] Max retries reached. Starting without database...');
-        console.error('[DB] Run `npm run setup:db` to install and configure MongoDB.');
-        return;
+        console.error('[DB] Run `npm run setup:db` to install and configure PostgreSQL.');
+        return null;
       }
       await new Promise(r => setTimeout(r, 3000));
     }
   }
 }
 
+export function getPrisma() {
+  return prisma;
+}
+
 export function getConnectionStatus() {
-  return {
-    connected: mongoose.connection.readyState === 1,
-    readyState: ['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState],
-    host: mongoose.connection.host || null,
-    name: mongoose.connection.name || null
-  };
+  try {
+    return {
+      connected: isConnected,
+      readyState: isConnected ? 'connected' : 'disconnected',
+      provider: 'postgresql'
+    };
+  } catch {
+    return { connected: false, readyState: 'disconnected', provider: 'postgresql' };
+  }
 }
 
 export async function disconnectDatabase() {
   if (isConnected) {
-    await mongoose.disconnect();
+    await prisma.$disconnect();
     isConnected = false;
-    console.log('[DB] MongoDB disconnected');
+    console.log('[DB] PostgreSQL disconnected');
   }
 }
 
-export default { connectDatabase, disconnectDatabase, getConnectionStatus };
+export default { connectDatabase, disconnectDatabase, getConnectionStatus, getPrisma };

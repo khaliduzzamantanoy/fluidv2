@@ -1,6 +1,4 @@
-import ServerStats from '../models/ServerStats.js';
-import Project from '../models/Project.js';
-import Deployment from '../models/Deployment.js';
+import { getPrisma } from '../services/database.js';
 import { authenticate } from '../middleware/auth.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -8,9 +6,9 @@ import { promisify } from 'util';
 const execPromise = promisify(exec);
 
 export default async function monitoringRoutes(fastify) {
-  // Get current server stats
   fastify.get('/api/server/stats', { preHandler: [authenticate] }, async (request, reply) => {
-    const latest = await ServerStats.findOne().sort({ timestamp: -1 });
+    const prisma = getPrisma();
+    const latest = await prisma.serverStats.findFirst({ orderBy: { timestamp: 'desc' } });
 
     return reply.send({
       success: true,
@@ -19,14 +17,16 @@ export default async function monitoringRoutes(fastify) {
     });
   });
 
-  // Get server stats history (time series)
   fastify.get('/api/server/stats/history', { preHandler: [authenticate] }, async (request, reply) => {
+    const prisma = getPrisma();
     const hours = parseInt(request.query.hours) || 24;
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
 
-    const history = await ServerStats.find({ timestamp: { $gte: since } })
-      .sort({ timestamp: 1 })
-      .limit(1000);
+    const history = await prisma.serverStats.findMany({
+      where: { timestamp: { gte: since } },
+      orderBy: { timestamp: 'asc' },
+      take: 1000
+    });
 
     return reply.send({
       success: true,
@@ -37,26 +37,27 @@ export default async function monitoringRoutes(fastify) {
     });
   });
 
-  // Get dashboard overview
   fastify.get('/api/server/overview', { preHandler: [authenticate] }, async (request, reply) => {
-    const [
-      totalProjects,
-      activeProjects,
-      totalDeployments,
-      successfulDeployments,
-      failedDeployments,
-      latestStats,
-      recentDeployments,
-      latestProjects
-    ] = await Promise.all([
-      Project.countDocuments({ deletedAt: null }),
-      Project.countDocuments({ deletedAt: null, status: 'active' }),
-      Deployment.countDocuments(),
-      Deployment.countDocuments({ status: 'success' }),
-      Deployment.countDocuments({ status: 'failed' }),
-      ServerStats.findOne().sort({ timestamp: -1 }),
-      Deployment.find().sort({ createdAt: -1 }).limit(5).populate('projectId', 'name slug'),
-      Project.find({ deletedAt: null }).sort({ updatedAt: -1 }).limit(5).select('name slug status lastDeployedAt')
+    const prisma = getPrisma();
+
+    const [totalProjects, activeProjects, totalDeployments, successfulDeployments, failedDeployments, latestStats, recentDeployments, latestProjects] = await Promise.all([
+      prisma.project.count({ where: { deletedAt: null } }),
+      prisma.project.count({ where: { deletedAt: null, status: 'active' } }),
+      prisma.deployment.count(),
+      prisma.deployment.count({ where: { status: 'success' } }),
+      prisma.deployment.count({ where: { status: 'failed' } }),
+      prisma.serverStats.findFirst({ orderBy: { timestamp: 'desc' } }),
+      prisma.deployment.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        include: { project: { select: { name: true, slug: true } } }
+      }),
+      prisma.project.findMany({
+        where: { deletedAt: null },
+        orderBy: { updatedAt: 'desc' },
+        take: 5,
+        select: { id: true, name: true, slug: true, status: true, lastDeployedAt: true }
+      })
     ]);
 
     return reply.send({
@@ -80,7 +81,6 @@ export default async function monitoringRoutes(fastify) {
     });
   });
 
-  // Collect server stats (called internally by a cron)
   fastify.post('/api/server/collect-stats', async (request, reply) => {
     const authToken = request.headers['x-internal-token'];
     if (authToken !== process.env.INTERNAL_TOKEN) {
@@ -93,43 +93,43 @@ export default async function monitoringRoutes(fastify) {
       const { stdout: dfOut } = await execPromise('df -B1 / 2>/dev/null').catch(() => ({ stdout: '' }));
 
       let pm2Processes = [];
-      try { pm2Processes = JSON.parse(pm2Out).map(p => ({
-        name: p.name,
-        pid: p.pid,
-        cpu: p.monit?.cpu || 0,
-        memory: p.monit?.memory || 0,
-        status: p.pm2_env?.status || 'unknown',
-        uptime: p.pm2_env?.pm_uptime ? Date.now() - p.pm2_env.pm_uptime : 0,
-        restarts: p.pm2_env?.restart_time || 0
-      })); } catch (e) {}
+      try {
+        pm2Processes = JSON.parse(pm2Out).map(p => ({
+          name: p.name, pid: p.pid, cpu: p.monit?.cpu || 0, memory: p.monit?.memory || 0,
+          status: p.pm2_env?.status || 'unknown', uptime: p.pm2_env?.pm_uptime ? Date.now() - p.pm2_env.pm_uptime : 0, restarts: p.pm2_env?.restart_time || 0
+        }));
+      } catch (e) {}
 
       const dfLines = dfOut.split('\n').filter(l => l.trim());
       const diskInfo = dfLines.length > 1 ? dfLines[1].split(/\s+/) : [];
-      
-      const stats = await ServerStats.create({
-        timestamp: new Date(),
-        cpu: {
-          usage: os.loadavg()[0] / os.cpus().length * 100,
-          loadAvg: os.loadavg(),
-          cores: os.cpus().length
-        },
-        memory: {
-          total: os.totalmem(),
-          used: os.totalmem() - os.freemem(),
-          free: os.freemem(),
-          available: os.freemem()
-        },
-        disk: [{
-          mount: '/',
-          total: parseInt(diskInfo[1]) || 0,
-          used: parseInt(diskInfo[2]) || 0,
-          free: parseInt(diskInfo[3]) || 0,
-          usage: parseInt(diskInfo[2]) && parseInt(diskInfo[1]) ? (parseInt(diskInfo[2]) / parseInt(diskInfo[1]) * 100) : 0
-        }],
-        processes: {
-          total: pm2Processes.length,
-          running: pm2Processes.filter(p => p.status === 'online').length,
-          pm2Processes
+
+      const prisma = getPrisma();
+      const stats = await prisma.serverStats.create({
+        data: {
+          timestamp: new Date(),
+          cpu: {
+            usage: os.loadavg()[0] / os.cpus().length * 100,
+            loadAvg: os.loadavg(),
+            cores: os.cpus().length
+          },
+          memory: {
+            total: os.totalmem(),
+            used: os.totalmem() - os.freemem(),
+            free: os.freemem(),
+            available: os.freemem()
+          },
+          disk: [{
+            mount: '/',
+            total: parseInt(diskInfo[1]) || 0,
+            used: parseInt(diskInfo[2]) || 0,
+            free: parseInt(diskInfo[3]) || 0,
+            usage: parseInt(diskInfo[2]) && parseInt(diskInfo[1]) ? (parseInt(diskInfo[2]) / parseInt(diskInfo[1]) * 100) : 0
+          }],
+          processes: {
+            total: pm2Processes.length,
+            running: pm2Processes.filter(p => p.status === 'online').length,
+            pm2Processes
+          }
         }
       });
 
@@ -139,24 +139,25 @@ export default async function monitoringRoutes(fastify) {
     }
   });
 
-  // Get activity logs
   fastify.get('/api/activity', { preHandler: [authenticate] }, async (request, reply) => {
+    const prisma = getPrisma();
     const page = parseInt(request.query.page) || 1;
     const limit = parseInt(request.query.limit) || 30;
     const skip = (page - 1) * limit;
 
-    const filter = { userId: request.user._id };
-    if (request.query.projectId) filter.projectId = request.query.projectId;
-    if (request.query.category) filter.category = request.query.category;
+    const where = { userId: request.user.id };
+    if (request.query.projectId) where.projectId = request.query.projectId;
+    if (request.query.category) where.category = request.query.category;
 
     const [activities, total] = await Promise.all([
-      (await import('../models/ActivityLog.js')).default
-        .find(filter)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .populate('projectId', 'name slug'),
-      (await import('../models/ActivityLog.js')).default.countDocuments(filter)
+      prisma.activityLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        include: { project: { select: { name: true, slug: true } } }
+      }),
+      prisma.activityLog.count({ where })
     ]);
 
     return reply.send({
@@ -166,7 +167,6 @@ export default async function monitoringRoutes(fastify) {
     });
   });
 
-  // Get available frameworks
   fastify.get('/api/server/frameworks', async (request, reply) => {
     return reply.send({
       success: true,

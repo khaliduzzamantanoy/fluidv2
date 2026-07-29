@@ -1,5 +1,5 @@
 import { getTokenFromRequest, verifyToken } from '../services/auth.js';
-import User from '../models/User.js';
+import { getPrisma } from '../services/database.js';
 
 export async function authenticate(request, reply) {
   const token = getTokenFromRequest(request);
@@ -12,7 +12,8 @@ export async function authenticate(request, reply) {
     return reply.status(401).send({ success: false, error: 'Invalid or expired token' });
   }
 
-  const user = await User.findById(decoded.id);
+  const prisma = getPrisma();
+  const user = await prisma.user.findUnique({ where: { id: decoded.id } });
   if (!user) {
     return reply.status(401).send({ success: false, error: 'User not found' });
   }
@@ -27,7 +28,8 @@ export async function optionalAuth(request, reply) {
   const decoded = verifyToken(token);
   if (!decoded) return;
 
-  const user = await User.findById(decoded.id);
+  const prisma = getPrisma();
+  const user = await prisma.user.findUnique({ where: { id: decoded.id } });
   if (user) {
     request.user = user;
   }

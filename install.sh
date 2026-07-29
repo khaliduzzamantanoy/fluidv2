@@ -6,8 +6,8 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; BO
 
 echo -e "${CYAN}${BOLD}"
 echo "=============================================================================="
-echo "                   FLUID — VPS PORTAL (v2.0)                                 "
-echo "                   Full Server Management Platform                            "
+echo "                   FLUID -- VPS PORTAL (v2.0)                                 "
+echo "                   PostgreSQL + Prisma Edition                                "
 echo "=============================================================================="
 echo -e "${NC}"
 
@@ -20,15 +20,13 @@ if [ -f /etc/os-release ]; then
 else
   echo -e "${RED}[ERROR] Cannot detect OS. Ubuntu 22.04+ recommended.${NC}"; exit 1
 fi
-echo -e "${GREEN}[1/7] OS:${NC} $OS $VER"
+echo -e "${GREEN}[1/8] OS:${NC} $OS $VER"
 
-# Install core dependencies
-echo -e "${GREEN}[2/7] Installing core dependencies...${NC}"
+echo -e "${GREEN}[2/8] Installing core dependencies...${NC}"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y curl wget git build-essential python3 python3-pip software-properties-common nginx certbot python3-certbot-nginx ufw gnupg
 
-# Install Node.js 20 LTS
 NODE_NEED_INSTALL=true
 if command -v node >/dev/null 2>&1; then
   NODE_VER=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
@@ -40,28 +38,22 @@ if [ "$NODE_NEED_INSTALL" = true ]; then
   apt-get install -y nodejs
 fi
 
-# Install PM2 and pnpm
 echo -e "${GREEN}[INFO] Installing PM2...${NC}"
 npm install -g pm2 pnpm >/dev/null 2>&1 || true
 
-# Install MongoDB
-echo -e "${GREEN}[3/7] Installing MongoDB...${NC}"
-if ! command -v mongod >/dev/null 2>&1; then
-  curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
-  echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
-  apt-get update -y
-  apt-get install -y mongodb-org
-  systemctl daemon-reload
-  systemctl enable mongod
-  systemctl start mongod
-  echo -e "${GREEN}[OK] MongoDB installed and running${NC}"
+echo -e "${GREEN}[3/8] Installing PostgreSQL...${NC}"
+if ! command -v psql >/dev/null 2>&1; then
+  apt-get install -y postgresql postgresql-contrib
+  systemctl enable postgresql
+  systemctl start postgresql
+  echo -e "${GREEN}[OK] PostgreSQL installed and running${NC}"
 else
-  echo -e "${GREEN}[OK] MongoDB already installed${NC}"
+  echo -e "${GREEN}[OK] PostgreSQL already installed${NC}"
+  systemctl start postgresql 2>/dev/null || true
 fi
 
-# Set up project directory
 FLUID_DIR="/opt/fluid"
-echo -e "${GREEN}[4/7] Setting up Fluid at ${FLUID_DIR}...${NC}"
+echo -e "${GREEN}[4/8] Setting up Fluid at ${FLUID_DIR}...${NC}"
 
 if [ -d "./server" ] && [ -f "./package.json" ]; then
   cp -r ./* "$FLUID_DIR/" 2>/dev/null || true
@@ -78,24 +70,24 @@ fi
 
 cd "$FLUID_DIR"
 
-# Install Node dependencies
-echo -e "${GREEN}[5/7] Installing Node.js dependencies...${NC}"
+echo -e "${GREEN}[5/8] Installing Node.js dependencies...${NC}"
 npm install --include=dev 2>&1 | tail -3
 
-# Build frontend
+echo -e "${GREEN}[INFO] Generating Prisma client...${NC}"
+npx prisma generate 2>&1 | tail -3
+
+echo -e "${GREEN}[6/8] Configuring database...${NC}"
+node server/setup-db.js 2>&1 || echo -e "${YELLOW}[WARN] PostgreSQL setup incomplete - run manually with: npm run setup:db${NC}"
+
 echo -e "${GREEN}[INFO] Building frontend...${NC}"
 npm run build 2>&1 | tail -10 || {
   echo -e "${YELLOW}[WARN] First build failed, retrying with clean install...${NC}"
   rm -rf node_modules .next
   npm install 2>&1 | tail -3
+  npx prisma generate 2>&1 | tail -2
   npm run build 2>&1 | tail -5 || echo -e "${YELLOW}[WARN] Build still failing - check logs at /var/log/fluid.error.log${NC}"
 }
 
-# Setup MongoDB database
-echo -e "${GREEN}[6/7] Configuring database...${NC}"
-node server/setup-mongodb.js 2>&1 || echo -e "${YELLOW}[WARN] MongoDB setup incomplete - run manually with: npm run setup:db${NC}"
-
-# Configure firewall
 echo -e "${GREEN}[INFO] Configuring firewall...${NC}"
 if command -v ufw >/dev/null 2>&1; then
   ufw allow 6776/tcp >/dev/null 2>&1 || true
@@ -104,12 +96,11 @@ if command -v ufw >/dev/null 2>&1; then
   ufw allow 22/tcp >/dev/null 2>&1 || true
 fi
 
-# Create systemd service
-echo -e "${GREEN}[7/7] Creating systemd service...${NC}"
+echo -e "${GREEN}[7/8] Creating systemd service...${NC}"
 cat > /etc/systemd/system/fluid.service << 'SERVICEEOF'
 [Unit]
 Description=Fluid VPS Portal
-After=network.target mongod.target
+After=network.target postgresql.target
 
 [Service]
 Type=simple
@@ -129,8 +120,7 @@ SERVICEEOF
 systemctl daemon-reload
 systemctl enable fluid
 
-# Start Fluid
-echo -e "${GREEN}[INFO] Starting Fluid service...${NC}"
+echo -e "${GREEN}[8/8] Starting Fluid service...${NC}"
 systemctl start fluid || {
   echo -e "${YELLOW}[WARN] Service start failed. Starting manually...${NC}"
   nohup node server/index.js > /var/log/fluid.log 2>&1 &
@@ -138,14 +128,12 @@ systemctl start fluid || {
 
 sleep 3
 
-# Check status
 if systemctl is-active --quiet fluid 2>/dev/null || pgrep -f "node server/index.js" > /dev/null; then
   echo -e "${GREEN}[OK] Fluid is running${NC}"
 else
   echo -e "${YELLOW}[WARN] Checking /var/log/fluid.log for details${NC}"
 fi
 
-# Get IP
 VPS_IP=$(curl -s --max-time 3 https://api.ipify.org || curl -s --max-time 3 https://ifconfig.me || echo "VPS_IP")
 
 echo -e "${GREEN}${BOLD}"

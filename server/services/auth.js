@@ -6,7 +6,7 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
 export function generateToken(user) {
   return jwt.sign(
     {
-      id: user._id.toString(),
+      id: user.id,
       username: user.username,
       role: user.role
     },
@@ -19,9 +19,6 @@ export function verifyToken(token) {
   try {
     return jwt.verify(token, JWT_SECRET);
   } catch (err) {
-    if (err.name === 'TokenExpiredError') {
-      return null;
-    }
     return null;
   }
 }

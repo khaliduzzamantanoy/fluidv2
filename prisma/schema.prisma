@@ -1,0 +1,230 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  email        String?
+  passwordHash String
+  fullName     String?
+  avatarUrl    String?
+  githubToken  String?
+  githubId     Int?
+  githubLogin  String?
+  role         String    @default("owner")
+  lastLoginAt  DateTime?
+  settings     Json      @default("{\"theme\":\"dark\",\"notifications\":{\"deploy\":true,\"webhook\":true,\"security\":true},\"timezone\":\"UTC\"}")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  projects     Project[]
+  deployments  Deployment[]
+  activityLogs ActivityLog[]
+}
+
+model Project {
+  id                      String    @id @default(cuid())
+  userId                  String
+  name                    String
+  slug                    String
+  repository              Json      @default("{}")
+  directory               String
+  framework               String    @default("custom")
+  port                    Int       @default(3000)
+  buildCommand            String    @default("npm run build")
+  installCommand          String    @default("npm install")
+  startCommand            String    @default("npm start")
+  outputDirectory         String?
+  nodeVersion             String?
+  dockerfilePath          String?
+  dockerComposeFile       String?
+  processManager          String    @default("pm2")
+  pm2Config               Json      @default("{}")
+  github                  Json      @default("{}")
+  healthCheck             Json      @default("{}")
+  cronJobs                Json      @default("[]")
+  status                  String    @default("creating")
+  lastDeployedAt          DateTime?
+  lastSuccessfulDeployAt  DateTime?
+  deploymentCount         Int       @default(0)
+  totalBuildTime          Int       @default(0)
+  deletedAt               DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  user                    User      @relation(fields: [userId], references: [id])
+  envVars                 EnvVar[]
+  domains                 Domain[]
+  deployments             Deployment[]
+  sslCertificates         SslCertificate[]
+  webhookDeliveries       WebhookDelivery[]
+  activityLogs            ActivityLog[]
+
+  @@unique([slug, userId])
+  @@index([userId])
+}
+
+model EnvVar {
+  id          String  @id @default(cuid())
+  projectId   String
+  key         String
+  value       String
+  isSecret    Boolean @default(false)
+  description String?
+
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model Domain {
+  id          String    @id @default(cuid())
+  projectId   String
+  domain      String
+  wwwRedirect Boolean   @default(true)
+  isPrimary   Boolean   @default(false)
+  sslStatus   String    @default("none")
+  sslProvider  String   @default("none")
+  certExpiry  DateTime?
+  dnsVerified Boolean   @default(false)
+  forceHttps  Boolean   @default(true)
+  hstsEnabled Boolean   @default(false)
+  verifiedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model Deployment {
+  id                   String    @id @default(cuid())
+  projectId            String
+  userId               String?
+  trigger              String    @default("manual")
+  triggerMetadata      Json      @default("{}")
+  status               String    @default("queued")
+  stage                String    @default("queued")
+  stages               Json      @default("[]")
+  buildInfo            Json      @default("{}")
+  url                  String?
+  commitSha            String?
+  previousDeploymentId String?
+  environment          String    @default("production")
+  logChunks            Json      @default("[]")
+  startedAt            DateTime?
+  finishedAt           DateTime?
+  duration             Int?
+  exitCode             Int?
+  error                String?
+  cancelledAt          DateTime?
+  cancelledBy          String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  project              Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user                 User?     @relation(fields: [userId], references: [id])
+
+  @@index([projectId, createdAt])
+  @@index([status])
+}
+
+model ServerStats {
+  id        String   @id @default(cuid())
+  timestamp DateTime @default(now())
+  cpu       Json     @default("{}")
+  memory    Json     @default("{}")
+  disk      Json     @default("[]")
+  network   Json     @default("{}")
+  processes Json     @default("{}")
+  docker    Json     @default("{}")
+
+  @@index([timestamp])
+}
+
+model ActivityLog {
+  id          String    @id @default(cuid())
+  userId      String?
+  projectId   String?
+  action      String
+  category    String
+  description String?
+  metadata    Json?
+  ip          String?
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+
+  user        User?     @relation(fields: [userId], references: [id])
+  project     Project?  @relation(fields: [projectId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([category, createdAt])
+}
+
+model Settings {
+  id            String   @id @default("global")
+  server        Json     @default("{}")
+  github        Json     @default("{}")
+  ssl           Json     @default("{}")
+  notifications Json     @default("{}")
+  backup        Json     @default("{}")
+  security      Json     @default("{}")
+  updatedBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model SslCertificate {
+  id               String    @id @default(cuid())
+  projectId        String?
+  domainId         String?
+  domain           String    @unique
+  challengeType    String?
+  challengeToken   String?
+  challengeKeyAuth String?
+  dnsRecords       Json      @default("[]")
+  sslCertificate   Json      @default("{}")
+  status           String    @default("pending")
+  error            String?
+  attempts         Int       @default(0)
+  lastAttemptAt    DateTime?
+  nextRetryAt      DateTime?
+  autoRenew        Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  project          Project?  @relation(fields: [projectId], references: [id])
+
+  @@index([projectId])
+}
+
+model WebhookDelivery {
+  id           String    @id @default(cuid())
+  projectId    String
+  webhookId    String?
+  event        String?
+  payload      Json?
+  deliveryId   String?
+  signature    String?
+  status       String    @default("pending")
+  responseCode Int?
+  responseBody String?
+  attempts     Int       @default(0)
+  nextRetryAt  DateTime?
+  processedAt  DateTime?
+  error        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}

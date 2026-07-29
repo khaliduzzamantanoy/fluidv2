@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { spawn } from 'child_process';
+import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -13,20 +14,6 @@ const rl = readline.createInterface({ input: process.stdin, output: process.stdo
 
 function ask(question) {
   return new Promise((resolve) => rl.question(question, resolve));
-}
-
-function runCommand(command, args = [], options = {}) {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(command, args, { ...options, stdio: 'pipe' });
-    let stdout = '', stderr = '';
-    proc.stdout.on('data', (data) => stdout += data.toString());
-    proc.stderr.on('data', (data) => stderr += data.toString());
-    proc.on('close', (code) => {
-      if (code === 0) resolve(stdout.trim());
-      else reject(new Error(stderr || `Command failed with code ${code}`));
-    });
-    proc.on('error', reject);
-  });
 }
 
 function loadEnv() {
@@ -54,15 +41,6 @@ async function main() {
 
   loadEnv();
 
-  // Check MongoDB is running
-  try {
-    await runCommand('mongosh', ['--eval', 'db.adminCommand("ping")', '--quiet']);
-    console.log('[OK] MongoDB is running\n');
-  } catch {
-    console.log('[WARN] MongoDB not detected. Make sure to run npm run setup:db first.\n');
-  }
-
-  // Ask for admin credentials
   console.log('Create your admin account for the Fluid VPS Portal:\n');
 
   let username = '';
@@ -87,40 +65,39 @@ async function main() {
 
   rl.close();
 
-  // Connect to MongoDB and create user
-  const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/fluid';
-  console.log('\n[1/2] Connecting to MongoDB...');
+  const databaseUrl = process.env.DATABASE_URL || 'postgresql://fluid:fluid@127.0.0.1:5432/fluid';
+  console.log('\n[1/2] Connecting to PostgreSQL...');
 
   try {
-    const mongoose = (await import('mongoose')).default;
-    await mongoose.connect(uri, { serverSelectionTimeoutMS: 10000 });
-    console.log('[OK] Connected to MongoDB\n');
+    const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+    await prisma.$connect();
+    console.log('[OK] Connected to PostgreSQL\n');
 
-    const User = (await import('./models/User.js')).default;
-
-    const existingCount = await User.countDocuments();
+    const existingCount = await prisma.user.count();
     if (existingCount > 0) {
       console.log('[INFO] Admin user already exists. Creating additional user.\n');
     }
 
-    const existingUsername = await User.findOne({ username: username.toLowerCase() });
+    const existingUsername = await prisma.user.findUnique({ where: { username: username.toLowerCase() } });
     if (existingUsername) {
       console.error(`[ERROR] Username '${username}' is already taken.\n`);
       process.exit(1);
     }
 
-    // Create the user
-    const user = await User.create({
-      username: username.toLowerCase(),
-      email: email?.toLowerCase() || undefined,
-      passwordHash: password,
-      fullName: username,
-      role: 'owner'
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    const user = await prisma.user.create({
+      data: {
+        username: username.toLowerCase(),
+        email: email?.toLowerCase() || null,
+        passwordHash,
+        fullName: username,
+        role: 'owner'
+      }
     });
 
     console.log(`[OK] Admin user '${username}' created successfully!\n`);
 
-    // Update .env with JWT info
     const envPath = path.join(__dirname, '../.env');
     if (fs.existsSync(envPath)) {
       let envContent = fs.readFileSync(envPath, 'utf8');
@@ -135,14 +112,13 @@ async function main() {
       console.log('[OK] Credentials saved to .env\n');
     }
 
-    // Delete credentials file
     const credsPath = '/root/fluid-credentials.txt';
     if (fs.existsSync(credsPath)) {
       try { fs.rmSync(credsPath, { force: true }); } catch (e) {}
       console.log('[OK] Temporary credentials file removed\n');
     }
 
-    await mongoose.disconnect();
+    await prisma.$disconnect();
 
     console.log('==================================================');
     console.log('  SETUP COMPLETE!');

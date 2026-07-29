@@ -1,16 +1,17 @@
-import Project from '../models/Project.js';
-import SslCertificate from '../models/SslCertificate.js';
-import ActivityLog from '../models/ActivityLog.js';
+import { getPrisma } from '../services/database.js';
 import { authenticate } from '../middleware/auth.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import fs from 'fs';
 
 const execPromise = promisify(exec);
 
 export default async function domainRoutes(fastify) {
-  // Add domain to project
   fastify.post('/api/projects/:id/domains', { preHandler: [authenticate] }, async (request, reply) => {
-    const project = await Project.findOne({ _id: request.params.id, userId: request.user._id, deletedAt: null });
+    const prisma = getPrisma();
+    const project = await prisma.project.findFirst({
+      where: { id: request.params.id, userId: request.user.id, deletedAt: null }
+    });
     if (!project) {
       return reply.status(404).send({ success: false, error: 'Project not found' });
     }
@@ -21,112 +22,140 @@ export default async function domainRoutes(fastify) {
     }
 
     const cleanDomain = domain.toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
-    const existing = project.domains.find(d => d.domain === cleanDomain);
+
+    const existing = await prisma.domain.findFirst({
+      where: { projectId: project.id, domain: cleanDomain }
+    });
     if (existing) {
       return reply.status(400).send({ success: false, error: 'Domain already added to this project' });
     }
 
-    const isFirst = project.domains.length === 0;
+    const domainCount = await prisma.domain.count({ where: { projectId: project.id } });
+    const isFirst = domainCount === 0;
 
-    project.domains.push({
-      domain: cleanDomain,
-      isPrimary: isPrimary || isFirst,
-      wwwRedirect: wwwRedirect !== false,
-      forceHttps: forceHttps !== false,
-      sslStatus: 'none',
-      dnsVerified: false
+    const created = await prisma.domain.create({
+      data: {
+        projectId: project.id,
+        domain: cleanDomain,
+        isPrimary: isPrimary || isFirst,
+        wwwRedirect: wwwRedirect !== false,
+        forceHttps: forceHttps !== false,
+        sslStatus: 'none',
+        dnsVerified: false
+      }
     });
 
-    await project.save();
-
-    await ActivityLog.create({
-      userId: request.user._id,
-      projectId: project._id,
-      action: 'domain.add',
-      category: 'domain',
-      description: `Added domain ${cleanDomain} to ${project.name}`,
-      ip: request.ip,
-      userAgent: request.headers['user-agent']
+    await prisma.activityLog.create({
+      data: {
+        userId: request.user.id,
+        projectId: project.id,
+        action: 'domain.add',
+        category: 'domain',
+        description: `Added domain ${cleanDomain} to ${project.name}`,
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      }
     });
 
-    return reply.status(201).send({ success: true, project });
+    return reply.status(201).send({ success: true, domain: created });
   });
 
-  // Remove domain from project
   fastify.delete('/api/projects/:id/domains/:domainId', { preHandler: [authenticate] }, async (request, reply) => {
-    const project = await Project.findOne({ _id: request.params.id, userId: request.user._id, deletedAt: null });
+    const prisma = getPrisma();
+    const project = await prisma.project.findFirst({
+      where: { id: request.params.id, userId: request.user.id, deletedAt: null }
+    });
     if (!project) {
       return reply.status(404).send({ success: false, error: 'Project not found' });
     }
 
-    const domainIdx = project.domains.findIndex(d => d._id.toString() === request.params.domainId);
-    if (domainIdx === -1) {
+    const domain = await prisma.domain.findFirst({
+      where: { id: request.params.domainId, projectId: project.id }
+    });
+    if (!domain) {
       return reply.status(404).send({ success: false, error: 'Domain not found' });
     }
 
-    const removedDomain = project.domains[domainIdx];
-    project.domains.splice(domainIdx, 1);
+    await prisma.domain.delete({ where: { id: domain.id } });
 
-    if (removedDomain.isPrimary && project.domains.length > 0) {
-      project.domains[0].isPrimary = true;
+    if (domain.isPrimary) {
+      const nextDomain = await prisma.domain.findFirst({
+        where: { projectId: project.id },
+        orderBy: { createdAt: 'asc' }
+      });
+      if (nextDomain) {
+        await prisma.domain.update({
+          where: { id: nextDomain.id },
+          data: { isPrimary: true }
+        });
+      }
     }
 
-    await project.save();
+    const nginxAvailable = `/etc/nginx/sites-available/${domain.domain}`;
+    const nginxEnabled = `/etc/nginx/sites-enabled/${domain.domain}`;
+    try { await execPromise(`rm -f ${nginxAvailable} ${nginxEnabled}`); } catch (e) { }
 
-    // Remove Nginx config
-    const nginxAvailable = `/etc/nginx/sites-available/${removedDomain.domain}`;
-    const nginxEnabled = `/etc/nginx/sites-enabled/${removedDomain.domain}`;
-    try {
-      await execPromise(`rm -f ${nginxAvailable} ${nginxEnabled}`);
-    } catch (e) { }
-
-    await ActivityLog.create({
-      userId: request.user._id,
-      projectId: project._id,
-      action: 'domain.remove',
-      category: 'domain',
-      description: `Removed domain ${removedDomain.domain} from ${project.name}`,
-      ip: request.ip,
-      userAgent: request.headers['user-agent']
+    await prisma.activityLog.create({
+      data: {
+        userId: request.user.id,
+        projectId: project.id,
+        action: 'domain.remove',
+        category: 'domain',
+        description: `Removed domain ${domain.domain} from ${project.name}`,
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      }
     });
 
-    return reply.send({ success: true, project, removedDomain: removedDomain.domain });
+    return reply.send({ success: true, removedDomain: domain.domain });
   });
 
-  // Update domain settings
   fastify.put('/api/projects/:id/domains/:domainId', { preHandler: [authenticate] }, async (request, reply) => {
-    const project = await Project.findOne({ _id: request.params.id, userId: request.user._id, deletedAt: null });
+    const prisma = getPrisma();
+    const project = await prisma.project.findFirst({
+      where: { id: request.params.id, userId: request.user.id, deletedAt: null }
+    });
     if (!project) {
       return reply.status(404).send({ success: false, error: 'Project not found' });
     }
 
-    const domain = project.domains.id(request.params.domainId);
+    const domain = await prisma.domain.findFirst({
+      where: { id: request.params.domainId, projectId: project.id }
+    });
     if (!domain) {
       return reply.status(404).send({ success: false, error: 'Domain not found' });
     }
 
     const { isPrimary, wwwRedirect, forceHttps, hstsEnabled } = request.body || {};
+    const updateData = {};
 
     if (isPrimary) {
-      project.domains.forEach(d => d.isPrimary = false);
-      domain.isPrimary = true;
+      await prisma.domain.updateMany({
+        where: { projectId: project.id },
+        data: { isPrimary: false }
+      });
+      updateData.isPrimary = true;
     }
-    if (wwwRedirect !== undefined) domain.wwwRedirect = wwwRedirect;
-    if (forceHttps !== undefined) domain.forceHttps = forceHttps;
-    if (hstsEnabled !== undefined) domain.hstsEnabled = hstsEnabled;
+    if (wwwRedirect !== undefined) updateData.wwwRedirect = wwwRedirect;
+    if (forceHttps !== undefined) updateData.forceHttps = forceHttps;
+    if (hstsEnabled !== undefined) updateData.hstsEnabled = hstsEnabled;
 
-    await project.save();
-    return reply.send({ success: true, project });
+    const updated = await prisma.domain.update({ where: { id: domain.id }, data: updateData });
+    return reply.send({ success: true, domain: updated });
   });
 
-  // Verify DNS for domain
   fastify.post('/api/projects/:id/domains/:domainId/verify-dns', { preHandler: [authenticate] }, async (request, reply) => {
-    const project = await Project.findOne({ _id: request.params.id, userId: request.user._id, deletedAt: null });
+    const prisma = getPrisma();
+    const project = await prisma.project.findFirst({
+      where: { id: request.params.id, userId: request.user.id, deletedAt: null }
+    });
     if (!project) {
       return reply.status(404).send({ success: false, error: 'Project not found' });
     }
 
-    const domain = project.domains.id(request.params.domainId);
+    const domain = await prisma.domain.findFirst({
+      where: { id: request.params.domainId, projectId: project.id }
+    });
     if (!domain) {
       return reply.status(404).send({ success: false, error: 'Domain not found' });
     }
@@ -150,8 +179,10 @@ export default async function domainRoutes(fastify) {
       results.www.resolved = wwwIps;
     } catch (e) { }
 
-    domain.dnsVerified = results.a.matches;
-    await project.save();
+    await prisma.domain.update({
+      where: { id: domain.id },
+      data: { dnsVerified: results.a.matches }
+    });
 
     return reply.send({
       success: true,
@@ -164,14 +195,18 @@ export default async function domainRoutes(fastify) {
     });
   });
 
-  // Setup SSL for a domain
   fastify.post('/api/projects/:id/domains/:domainId/ssl', { preHandler: [authenticate] }, async (request, reply) => {
-    const project = await Project.findOne({ _id: request.params.id, userId: request.user._id, deletedAt: null });
+    const prisma = getPrisma();
+    const project = await prisma.project.findFirst({
+      where: { id: request.params.id, userId: request.user.id, deletedAt: null }
+    });
     if (!project) {
       return reply.status(404).send({ success: false, error: 'Project not found' });
     }
 
-    const domain = project.domains.id(request.params.domainId);
+    const domain = await prisma.domain.findFirst({
+      where: { id: request.params.domainId, projectId: project.id }
+    });
     if (!domain) {
       return reply.status(404).send({ success: false, error: 'Domain not found' });
     }
@@ -180,49 +215,56 @@ export default async function domainRoutes(fastify) {
       return reply.status(400).send({ success: false, error: 'DNS not verified. Verify DNS first.' });
     }
 
-    const sslRecord = await SslCertificate.findOneAndUpdate(
-      { domain: domain.domain },
-      {
-        projectId: project._id,
-        domainId: domain._id,
+    const sslRecord = await prisma.sslCertificate.upsert({
+      where: { domain: domain.domain },
+      update: {
+        projectId: project.id,
+        domainId: domain.id,
+        status: 'issuing',
+        lastAttemptAt: new Date(),
+        attempts: { increment: 1 }
+      },
+      create: {
+        projectId: project.id,
+        domainId: domain.id,
         domain: domain.domain,
         status: 'issuing',
         lastAttemptAt: new Date(),
-        $inc: { attempts: 1 }
-      },
-      { upsert: true, new: true }
-    );
+        attempts: 1
+      }
+    });
 
-    domain.sslStatus = 'pending';
-    await project.save();
+    await prisma.domain.update({
+      where: { id: domain.id },
+      data: { sslStatus: 'pending' }
+    });
 
-    // Execute certbot in background
     runCertbot(project, domain, sslRecord).catch(err => {
       console.error('[SSL] Certbot failed:', err.message);
     });
 
-    return reply.send({
-      success: true,
-      message: 'SSL certificate request initiated',
-      sslRecord
-    });
+    return reply.send({ success: true, message: 'SSL certificate request initiated', sslRecord });
   });
 
-  // Get domain SSL status
   fastify.get('/api/projects/:id/domains/:domainId/ssl', { preHandler: [authenticate] }, async (request, reply) => {
-    const project = await Project.findOne({ _id: request.params.id, userId: request.user._id, deletedAt: null });
+    const prisma = getPrisma();
+    const project = await prisma.project.findFirst({
+      where: { id: request.params.id, userId: request.user.id, deletedAt: null }
+    });
     if (!project) {
       return reply.status(404).send({ success: false, error: 'Project not found' });
     }
 
-    const domain = project.domains.id(request.params.domainId);
+    const domain = await prisma.domain.findFirst({
+      where: { id: request.params.domainId, projectId: project.id }
+    });
     if (!domain) {
       return reply.status(404).send({ success: false, error: 'Domain not found' });
     }
 
-    const sslRecord = await SslCertificate.findOne({ domain: domain.domain });
+    const sslRecord = await prisma.sslCertificate.findUnique({ where: { domain: domain.domain } });
     const certExpiry = sslRecord?.sslCertificate?.expiresAt || domain.certExpiry;
-    const daysUntilExpiry = certExpiry ? Math.floor((certExpiry - new Date()) / (1000 * 60 * 60 * 24)) : null;
+    const daysUntilExpiry = certExpiry ? Math.floor((new Date(certExpiry) - new Date()) / (1000 * 60 * 60 * 24)) : null;
 
     return reply.send({
       success: true,
@@ -242,9 +284,12 @@ export default async function domainRoutes(fastify) {
     });
   });
 
-  // Generate Nginx config for project domains
   fastify.get('/api/projects/:id/nginx-config', { preHandler: [authenticate] }, async (request, reply) => {
-    const project = await Project.findOne({ _id: request.params.id, userId: request.user._id, deletedAt: null });
+    const prisma = getPrisma();
+    const project = await prisma.project.findFirst({
+      where: { id: request.params.id, userId: request.user.id, deletedAt: null },
+      include: { domains: true }
+    });
     if (!project) {
       return reply.status(404).send({ success: false, error: 'Project not found' });
     }
@@ -263,7 +308,6 @@ export default async function domainRoutes(fastify) {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
     
-    # Redirect www to non-www
     ${d.wwwRedirect ? `
     if ($host = www.${d.domain}) {
         return 301 https://${d.domain}$request_uri;
@@ -271,7 +315,6 @@ export default async function domainRoutes(fastify) {
 
       const httpsRedirect = d.forceHttps ? `
     
-    # HTTP -> HTTPS redirect
     server {
         listen 80;
         listen [::]:80;
@@ -322,9 +365,12 @@ server {
     });
   });
 
-  // Write Nginx configs to disk
   fastify.post('/api/projects/:id/nginx-apply', { preHandler: [authenticate] }, async (request, reply) => {
-    const project = await Project.findOne({ _id: request.params.id, userId: request.user._id, deletedAt: null });
+    const prisma = getPrisma();
+    const project = await prisma.project.findFirst({
+      where: { id: request.params.id, userId: request.user.id, deletedAt: null },
+      include: { domains: true }
+    });
     if (!project) {
       return reply.status(404).send({ success: false, error: 'Project not found' });
     }
@@ -356,7 +402,7 @@ server {
         await execPromise(`mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled`);
         await execPromise(`cat > ${configPath} << 'NGINXEOF'\n${configContent}\nNGINXEOF`);
 
-        if (!require('fs').existsSync(enabledPath)) {
+        if (!fs.existsSync(enabledPath)) {
           await execPromise(`ln -sf ${configPath} ${enabledPath}`);
         }
 
@@ -366,7 +412,6 @@ server {
       }
     }
 
-    // Test and reload nginx
     try {
       await execPromise('nginx -t');
       await execPromise('systemctl reload nginx || nginx -s reload');
@@ -374,14 +419,16 @@ server {
       return reply.send({ success: false, results, nginxError: err.message });
     }
 
-    await ActivityLog.create({
-      userId: request.user._id,
-      projectId: project._id,
-      action: 'nginx.apply',
-      category: 'domain',
-      description: `Applied Nginx config for ${project.domains.map(d => d.domain).join(', ')}`,
-      ip: request.ip,
-      userAgent: request.headers['user-agent']
+    await prisma.activityLog.create({
+      data: {
+        userId: request.user.id,
+        projectId: project.id,
+        action: 'nginx.apply',
+        category: 'domain',
+        description: `Applied Nginx config for ${project.domains.map(d => d.domain).join(', ')}`,
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      }
     });
 
     return reply.send({ success: true, results });
@@ -389,6 +436,7 @@ server {
 }
 
 async function runCertbot(project, domain, sslRecord) {
+  const { getPrisma } = await import('../services/database.js');
   try {
     const email = process.env.SSL_EMAIL || 'admin@' + domain.domain;
     const staging = process.env.SSL_STAGING === 'true' ? '--staging' : '';
@@ -399,35 +447,29 @@ async function runCertbot(project, domain, sslRecord) {
     );
 
     const certDir = `/etc/letsencrypt/live/${domain.domain}`;
-    const fs = await import('fs');
 
     if (fs.existsSync(`${certDir}/fullchain.pem`)) {
       const cert = fs.readFileSync(`${certDir}/fullchain.pem`, 'utf8');
       const key = fs.readFileSync(`${certDir}/privkey.pem`, 'utf8');
 
-      // Update domain and SSL record
-      domain.sslStatus = 'active';
-      domain.sslProvider = 'letsencrypt';
-      await project.save();
+      const prisma = getPrisma();
+      await prisma.domain.update({
+        where: { id: domain.id },
+        data: { sslStatus: 'active', sslProvider: 'letsencrypt', certExpiry: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) }
+      });
 
-      sslRecord.status = 'active';
-      sslRecord.sslCertificate = {
-        cert,
-        key,
-        chain: cert,
-        fullchain: cert,
-        issuer: 'letsencrypt',
-        expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
-      };
-      await sslRecord.save();
+      await prisma.sslCertificate.update({
+        where: { id: sslRecord.id },
+        data: {
+          status: 'active',
+          sslCertificate: { cert, key, chain: cert, fullchain: cert, issuer: 'letsencrypt', expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString() }
+        }
+      });
     }
   } catch (err) {
     console.error('[SSL] Certbot execution error:', err.message);
-    domain.sslStatus = 'failed';
-    await project.save();
-
-    sslRecord.status = 'failed';
-    sslRecord.error = err.message;
-    await sslRecord.save();
+    const prisma = getPrisma();
+    await prisma.domain.update({ where: { id: domain.id }, data: { sslStatus: 'failed' } });
+    await prisma.sslCertificate.update({ where: { id: sslRecord.id }, data: { status: 'failed', error: err.message } });
   }
 }
