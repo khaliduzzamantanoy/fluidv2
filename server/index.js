@@ -45,44 +45,38 @@ await fastify.register(fastifyCookie, {
 });
 await fastify.register(fastifyWebsocket);
 
-let dbConnected = false;
 try {
   const { connectDatabase } = await import('./services/database.js');
   const prisma = await connectDatabase();
-  dbConnected = !!prisma;
-  if (dbConnected) {
+  if (prisma) {
     console.log('[Server] Database connected');
   } else {
-    console.warn('[Server] Running without database. Some features will be unavailable.');
+    console.warn('[Server] Running without database.');
   }
 } catch (err) {
   console.warn('[Server] Database not available:', err.message);
-  console.warn('[Server] Running without database. Some features will be unavailable.');
 }
 
-if (dbConnected) {
-  try {
-    const authRoutes = (await import('./routes/auth.js')).default;
-    const projectRoutes = (await import('./routes/projects.js')).default;
-    const deploymentRoutes = (await import('./routes/deployments.js')).default;
-    const domainRoutes = (await import('./routes/domains.js')).default;
-    const envRoutes = (await import('./routes/env-vars.js')).default;
-    const webhookRoutes = (await import('./routes/webhooks.js')).default;
-    const monitoringRoutes = (await import('./routes/monitoring.js')).default;
+try {
+  const authRoutes = (await import('./routes/auth.js')).default;
+  const projectRoutes = (await import('./routes/projects.js')).default;
+  const deploymentRoutes = (await import('./routes/deployments.js')).default;
+  const domainRoutes = (await import('./routes/domains.js')).default;
+  const envRoutes = (await import('./routes/env-vars.js')).default;
+  const webhookRoutes = (await import('./routes/webhooks.js')).default;
+  const monitoringRoutes = (await import('./routes/monitoring.js')).default;
 
-    await fastify.register(authRoutes);
-    await fastify.register(projectRoutes);
-    await fastify.register(deploymentRoutes);
-    await fastify.register(domainRoutes);
-    await fastify.register(envRoutes);
-    await fastify.register(webhookRoutes);
-    await fastify.register(monitoringRoutes);
+  await fastify.register(authRoutes);
+  await fastify.register(projectRoutes);
+  await fastify.register(deploymentRoutes);
+  await fastify.register(domainRoutes);
+  await fastify.register(envRoutes);
+  await fastify.register(webhookRoutes);
+  await fastify.register(monitoringRoutes);
 
-    console.log('[Server] All portal routes registered');
-  } catch (err) {
-    console.warn('[Server] Route registration failed:', err.message);
-    console.warn('[Server] Some portal features may be unavailable');
-  }
+  console.log('[Server] All portal routes registered');
+} catch (err) {
+  console.warn('[Server] Route registration failed:', err.message);
 }
 
 const sessionState = { githubToken: null, vpsIp: null };
@@ -135,7 +129,7 @@ fastify.post('/api/github/poll-token', async (request, reply) => {
     }, { client_id: clientId, device_code: deviceCode, grant_type: 'urn:ietf:params:oauth:grant-type:device_code' });
     if (res.data?.access_token) {
       sessionState.githubToken = res.data.access_token;
-      if (dbConnected && request.user?.githubToken !== res.data.access_token) {
+      if (request.user?.githubToken !== res.data.access_token) {
         try {
           const { getPrisma } = await import('./services/database.js');
           await getPrisma().user.update({
@@ -565,10 +559,11 @@ try {
   console.log(`\n==================================================`);
   console.log(`  FLUID VPS PORTAL RUNNING`);
   console.log(`  Open: http://localhost:${PORT}`);
-  console.log(`  Status: ${dbConnected ? 'Database connected' : 'No database'}`);
+  const { getConnectionStatus } = await import('./services/database.js');
+  console.log(`  Status: ${getConnectionStatus().connected ? 'Database connected' : 'No database'}`);
   console.log(`==================================================\n`);
 
-  if (dbConnected) {
+  if (getConnectionStatus().connected) {
     setInterval(async () => {
       try {
         const os = await import('os');

@@ -8,8 +8,6 @@ const __dirname = path.dirname(__filename);
 
 let isConnected = false;
 
-const prisma = new PrismaClient();
-
 function loadEnv() {
   const envPath = path.join(__dirname, '../../.env');
   if (fs.existsSync(envPath)) {
@@ -28,31 +26,27 @@ function loadEnv() {
   }
 }
 
+loadEnv();
+
+const prisma = new PrismaClient();
+
 export async function connectDatabase() {
   if (isConnected) return prisma;
 
-  loadEnv();
-
-  const maxRetries = 5;
-  let retryCount = 0;
-
-  while (retryCount < maxRetries) {
+  const maxRetries = 3;
+  for (let i = 0; i < maxRetries; i++) {
     try {
       await prisma.$connect();
       isConnected = true;
-      console.log('[DB] PostgreSQL connected successfully');
+      console.log('[DB] SQLite connected');
       return prisma;
     } catch (err) {
-      retryCount++;
-      console.error(`[DB] Database connection attempt ${retryCount}/${maxRetries} failed:`, err.message);
-      if (retryCount >= maxRetries) {
-        console.error('[DB] Max retries reached. Starting without database...');
-        console.error('[DB] Run `npm run setup:db` to install and configure PostgreSQL.');
-        return null;
-      }
-      await new Promise(r => setTimeout(r, 3000));
+      console.error(`[DB] Connection attempt ${i + 1}/${maxRetries} failed: ${err.message}`);
+      if (i < maxRetries - 1) await new Promise(r => setTimeout(r, 2000));
     }
   }
+  console.error('[DB] Max retries reached.');
+  return null;
 }
 
 export function getPrisma() {
@@ -60,22 +54,17 @@ export function getPrisma() {
 }
 
 export function getConnectionStatus() {
-  try {
-    return {
-      connected: isConnected,
-      readyState: isConnected ? 'connected' : 'disconnected',
-      provider: 'postgresql'
-    };
-  } catch {
-    return { connected: false, readyState: 'disconnected', provider: 'postgresql' };
-  }
+  return {
+    connected: isConnected,
+    readyState: isConnected ? 'connected' : 'disconnected',
+    provider: 'sqlite'
+  };
 }
 
 export async function disconnectDatabase() {
   if (isConnected) {
     await prisma.$disconnect();
     isConnected = false;
-    console.log('[DB] PostgreSQL disconnected');
   }
 }
 
