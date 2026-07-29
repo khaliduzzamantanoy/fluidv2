@@ -268,19 +268,43 @@ fastify.post('/api/system/check-dns', async (request, reply) => {
     domain: { host: domain, resolved: [], matches: false },
     wwwDomain: { host: wwwDomain || `www.${domain}`, resolved: [], matches: false }
   };
+
+  const resolver = new dns.Resolver();
+  resolver.setServers(['8.8.8.8', '1.1.1.1', '208.67.222.222']);
+
   try {
-    const mainIps = await dns.resolve4(domain).catch(() => []);
+    const mainIps = await resolver.resolve4(domain);
     results.domain.resolved = mainIps;
     results.domain.matches = mainIps.includes(vpsIp);
   } catch (e) {}
-  if (wwwDomain || domain) {
+
+  try {
+    const mainIpv6 = await resolver.resolve6(domain);
+    if (mainIpv6 && mainIpv6.length > 0) {
+      results.domain.resolved = [...results.domain.resolved, ...mainIpv6];
+    }
+  } catch (e) {}
+
+  const wwwHost = wwwDomain || `www.${domain}`;
+  if (wwwHost && wwwHost !== domain) {
     try {
-      const wwwIps = await dns.resolve4(wwwDomain || `www.${domain}`).catch(() => []);
+      const wwwIps = await resolver.resolve4(wwwHost);
       results.wwwDomain.resolved = wwwIps;
       results.wwwDomain.matches = wwwIps.includes(vpsIp);
     } catch (e) {}
+    try {
+      const wwwIpv6 = await resolver.resolve6(wwwHost);
+      if (wwwIpv6 && wwwIpv6.length > 0) {
+        results.wwwDomain.resolved = [...results.wwwDomain.resolved, ...wwwIpv6];
+      }
+    } catch (e) {}
+  } else {
+    results.wwwDomain = results.domain;
   }
-  return reply.send({ success: results.domain.matches || results.domain.resolved.length > 0, expectedIp: vpsIp, results });
+
+  const bothMatch = results.domain.matches && (!wwwHost || wwwHost === domain || results.wwwDomain.matches);
+  const domainResolved = results.domain.resolved.length > 0;
+  return reply.send({ success: bothMatch || (domainResolved && results.domain.matches), expectedIp: vpsIp, results });
 });
 
 fastify.post('/api/system/nginx', async (request, reply) => {
