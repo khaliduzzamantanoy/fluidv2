@@ -34,7 +34,7 @@ model Project {
   userId                  String
   name                    String
   slug                    String
-  repository              Json      @default("{}")
+  repository              Json?
   directory               String
   framework               String    @default("custom")
   port                    Int       @default(3000)
@@ -46,10 +46,10 @@ model Project {
   dockerfilePath          String?
   dockerComposeFile       String?
   processManager          String    @default("pm2")
-  pm2Config               Json      @default("{}")
-  github                  Json      @default("{}")
-  healthCheck             Json      @default("{}")
-  cronJobs                Json      @default("[]")
+  pm2Config               Json?
+  github                  Json?
+  healthCheck             Json?
+  cronJobs                Json?
   status                  String    @default("creating")
   lastDeployedAt          DateTime?
   lastSuccessfulDeployAt  DateTime?
@@ -110,16 +110,16 @@ model Deployment {
   projectId            String
   userId               String?
   trigger              String    @default("manual")
-  triggerMetadata      Json      @default("{}")
+  triggerMetadata      Json?
   status               String    @default("queued")
   stage                String    @default("queued")
-  stages               Json      @default("[]")
-  buildInfo            Json      @default("{}")
+  stages               Json?
+  buildInfo            Json?
   url                  String?
   commitSha            String?
   previousDeploymentId String?
   environment          String    @default("production")
-  logChunks            Json      @default("[]")
+  logChunks            Json?
   startedAt            DateTime?
   finishedAt           DateTime?
   duration             Int?
@@ -140,12 +140,12 @@ model Deployment {
 model ServerStats {
   id        String   @id @default(cuid())
   timestamp DateTime @default(now())
-  cpu       Json     @default("{}")
-  memory    Json     @default("{}")
-  disk      Json     @default("[]")
-  network   Json     @default("{}")
-  processes Json     @default("{}")
-  docker    Json     @default("{}")
+  cpu       Json?
+  memory    Json?
+  disk      Json?
+  network   Json?
+  processes Json?
+  docker    Json?
 
   @@index([timestamp])
 }
@@ -172,12 +172,12 @@ model ActivityLog {
 
 model Settings {
   id            String   @id @default("global")
-  server        Json     @default("{}")
-  github        Json     @default("{}")
-  ssl           Json     @default("{}")
-  notifications Json     @default("{}")
-  backup        Json     @default("{}")
-  security      Json     @default("{}")
+  server        Json?
+  github        Json?
+  ssl           Json?
+  notifications Json?
+  backup        Json?
+  security      Json?
   updatedBy     String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -191,8 +191,8 @@ model SslCertificate {
   challengeType    String?
   challengeToken   String?
   challengeKeyAuth String?
-  dnsRecords       Json      @default("[]")
-  sslCertificate   Json      @default("{}")
+  dnsRecords       Json?
+  sslCertificate   Json?
   status           String    @default("pending")
   error            String?
   attempts         Int       @default(0)
