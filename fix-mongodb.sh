@@ -29,6 +29,8 @@ net:
   bindIp: 127.0.0.1
 processManagement:
   timeZoneInfo: /usr/share/zoneinfo
+security:
+  keyFile: /etc/mongodb-keyfile
 replication:
   replSetName: "rs0"
 CONF
