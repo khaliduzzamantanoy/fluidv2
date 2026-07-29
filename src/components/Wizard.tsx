@@ -18,9 +18,11 @@ import Step11Nginx from './steps/Step11Nginx';
 import Step12FinalSetup from './steps/Step12FinalSetup';
 import Step13Completion from './steps/Step13Completion';
 
-const WIZARD_GITHUB_TOKEN_KEY = 'fluid_wizard_github_token';
+interface WizardProps {
+  user?: any;
+}
 
-export default function Wizard() {
+export default function Wizard({ user }: WizardProps) {
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [wizardData, setWizardData] = useState<any>({
     githubToken: '',
@@ -41,12 +43,11 @@ export default function Wizard() {
   });
 
   useEffect(() => {
-    const saved = localStorage.getItem(WIZARD_GITHUB_TOKEN_KEY);
-    if (saved) {
-      setWizardData((prev: any) => ({ ...prev, githubToken: saved }));
+    if (user?.githubToken) {
+      setWizardData((prev: any) => ({ ...prev, githubToken: user.githubToken }));
       setCurrentStep(2);
     }
-  }, []);
+  }, [user]);
 
   const stepsList = [
     'GitHub Login',
@@ -139,10 +140,7 @@ export default function Wizard() {
         <div className="w-full">
           {currentStep === 1 && (
             <Step1GitHubLogin
-              onNext={(data) => {
-                localStorage.setItem(WIZARD_GITHUB_TOKEN_KEY, data.githubToken);
-                goToNext({ githubToken: data.githubToken });
-              }}
+              onNext={(data) => goToNext({ githubToken: data.githubToken })}
             />
           )}
 

@@ -126,7 +126,7 @@ export default async function authRoutes(fastify) {
     const prisma = getPrisma();
     const user = await prisma.user.findUnique({
       where: { id: decoded.id },
-      select: { passwordHash: false, githubToken: false }
+      select: { passwordHash: false }
     });
     if (!user) {
       return reply.status(401).send({ success: false, error: 'User not found' });

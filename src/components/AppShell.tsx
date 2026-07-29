@@ -61,7 +61,7 @@ export default function AppShell({ user, onLogout }: { user: any; onLogout: () =
       case 'settings':
         return <SettingsPage user={user} onLogout={onLogout} />;
       case 'wizard':
-        return <Wizard />;
+        return <Wizard user={user} />;
       default:
         return <DashboardHome user={user} onNavigate={navigateTo} />;
     }
