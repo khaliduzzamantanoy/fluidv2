@@ -25,6 +25,8 @@ export default function ProjectDetail({ projectId, user, onNavigate }: ProjectDe
   const [newEnvValue, setNewEnvValue] = useState('');
   const [showEnvValue, setShowEnvValue] = useState<Record<string, boolean>>({});
   const [deploying, setDeploying] = useState(false);
+  const [webhookStatus, setWebhookStatus] = useState<string | null>(null);
+  const [registeringWebhook, setRegisteringWebhook] = useState(false);
 
   useEffect(() => {
     if (projectId) loadProject();
@@ -102,6 +104,26 @@ export default function ProjectDetail({ projectId, user, onNavigate }: ProjectDe
       loadEnvVars();
     } catch (err) {
       console.error('Delete env error:', err);
+    }
+  };
+
+  const registerWebhook = async () => {
+    setRegisteringWebhook(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/webhooks/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setWebhookStatus('registered');
+      } else {
+        setWebhookStatus(data.error || 'Failed to register');
+      }
+    } catch (err) {
+      setWebhookStatus('Network error');
+    } finally {
+      setRegisteringWebhook(false);
     }
   };
 
@@ -416,6 +438,32 @@ export default function ProjectDetail({ projectId, user, onNavigate }: ProjectDe
             <div>
               <label className="text-xs text-gray-400 block mb-1">Process Manager</label>
               <input type="text" value={project.processManager} className="w-full px-3 py-2 bg-[#090d16] border border-gray-700 rounded-lg text-white text-xs focus:border-brand-500 outline-none" readOnly />
+            </div>
+
+            {/* Webhook / Auto-deploy */}
+            <div className="pt-2 border-t border-gray-800">
+              <h4 className="text-sm font-semibold text-white mb-3">Auto-Deploy (Webhook)</h4>
+              <p className="text-xs text-gray-400 mb-3">
+                Register a GitHub webhook so pushes to <span className="font-mono text-gray-300">{project.repository?.fullName || 'your repo'}</span> trigger automatic redeploy.
+              </p>
+              {project.github?.webhookId ? (
+                <div className="flex items-center space-x-2 text-xs">
+                  <CheckCircle className="w-4 h-4 text-emerald-400" />
+                  <span className="text-emerald-400">Webhook registered</span>
+                </div>
+              ) : (
+                <button
+                  onClick={registerWebhook}
+                  disabled={registeringWebhook}
+                  className="flex items-center space-x-2 px-4 py-2 bg-brand-500 hover:bg-brand-400 text-white text-xs font-semibold rounded-lg transition disabled:opacity-50"
+                >
+                  {registeringWebhook ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  <span>{registeringWebhook ? 'Registering...' : 'Register Webhook'}</span>
+                </button>
+              )}
+              {webhookStatus && webhookStatus !== 'registered' && (
+                <p className="text-xs text-red-400 mt-2">{webhookStatus}</p>
+              )}
             </div>
           </div>
         )}

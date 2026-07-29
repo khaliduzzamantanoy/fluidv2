@@ -11,6 +11,7 @@ import { fileURLToPath } from 'url';
 import dns from 'dns/promises';
 import http from 'http';
 import https from 'https';
+import { optionalAuth } from './middleware/auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -121,7 +122,7 @@ fastify.post('/api/github/device-code', async (request, reply) => {
   }
 });
 
-fastify.post('/api/github/poll-token', async (request, reply) => {
+fastify.post('/api/github/poll-token', { preHandler: [optionalAuth] }, async (request, reply) => {
   const { clientId, deviceCode } = request.body || {};
   try {
     const res = await httpRequest('https://github.com/login/oauth/access_token', {
