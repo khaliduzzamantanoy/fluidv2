@@ -1,5 +1,5 @@
 import { getPrisma } from '../services/database.js';
-import { generateToken, getTokenCookieOptions } from '../services/auth.js';
+import { generateToken, setTokenCookie, clearTokenCookie, getTokenFromRequest } from '../services/auth.js';
 import { authenticate } from '../middleware/auth.js';
 import bcrypt from 'bcryptjs';
 
@@ -39,7 +39,7 @@ export default async function authRoutes(fastify) {
     });
 
     const token = generateToken(user);
-    reply.setCookie('token', token, getTokenCookieOptions());
+    setTokenCookie(reply, token);
 
     await prisma.activityLog.create({
       data: {
@@ -83,7 +83,7 @@ export default async function authRoutes(fastify) {
     });
 
     const token = generateToken(user);
-    reply.setCookie('token', token, getTokenCookieOptions());
+    setTokenCookie(reply, token);
 
     await prisma.activityLog.create({
       data: {
@@ -107,12 +107,12 @@ export default async function authRoutes(fastify) {
   });
 
   fastify.post('/api/auth/logout', async (request, reply) => {
-    reply.clearCookie('token', { path: '/' });
+    clearTokenCookie(reply);
     return reply.send({ success: true });
   });
 
   fastify.get('/api/auth/me', async (request, reply) => {
-    const token = request.cookies?.token || request.headers.authorization?.replace('Bearer ', '');
+    const token = getTokenFromRequest(request);
     if (!token) {
       return reply.status(401).send({ success: false, error: 'Not authenticated' });
     }

@@ -3,7 +3,6 @@
 import Fastify from 'fastify';
 import fastifyWebsocket from '@fastify/websocket';
 import fastifyCors from '@fastify/cors';
-import fastifyCookie from '@fastify/cookie';
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
@@ -41,7 +40,6 @@ await fastify.register(fastifyCors, {
   origin: process.env.CORS_ORIGIN || true,
   credentials: true
 });
-await fastify.register(fastifyCookie);
 await fastify.register(fastifyWebsocket);
 
 try {

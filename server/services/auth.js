@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { serialize, parse } from 'cookie';
 
 const getJWTSecret = () => process.env.JWT_SECRET || 'fluid-dev-secret-change-in-production';
 const getJWTExpiresIn = () => process.env.JWT_EXPIRES_IN || '24h';
@@ -29,22 +30,32 @@ export function getTokenFromRequest(request) {
     return authHeader.substring(7);
   }
 
-  const cookie = request.cookies?.token;
-  if (cookie) {
-    return cookie;
+  const cookieHeader = request.headers.cookie;
+  if (cookieHeader) {
+    const cookies = parse(cookieHeader);
+    if (cookies.token) return cookies.token;
   }
 
   return null;
 }
 
-export function getTokenCookieOptions() {
-  return {
+export function setTokenCookie(reply, token) {
+  const cookieStr = serialize('token', token, {
     path: '/',
     httpOnly: true,
     secure: false,
     sameSite: 'lax',
     maxAge: 86400
-  };
+  });
+  reply.header('Set-Cookie', cookieStr);
+}
+
+export function clearTokenCookie(reply) {
+  const cookieStr = serialize('token', '', {
+    path: '/',
+    maxAge: 0
+  });
+  reply.header('Set-Cookie', cookieStr);
 }
 
 
