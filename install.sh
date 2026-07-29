@@ -7,7 +7,6 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; BO
 echo -e "${CYAN}${BOLD}"
 echo "=============================================================================="
 echo "                   FLUID -- VPS PORTAL (v2.0)                                 "
-echo "                   PostgreSQL + Prisma Edition                                "
 echo "=============================================================================="
 echo -e "${NC}"
 
@@ -20,12 +19,12 @@ if [ -f /etc/os-release ]; then
 else
   echo -e "${RED}[ERROR] Cannot detect OS. Ubuntu 22.04+ recommended.${NC}"; exit 1
 fi
-echo -e "${GREEN}[1/8] OS:${NC} $OS $VER"
+echo -e "${GREEN}[1/6] OS:${NC} $OS $VER"
 
-echo -e "${GREEN}[2/8] Installing core dependencies...${NC}"
+echo -e "${GREEN}[2/6] Installing core dependencies...${NC}"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y curl wget git build-essential python3 python3-pip software-properties-common nginx certbot python3-certbot-nginx ufw gnupg
+apt-get install -y curl wget git build-essential nginx ufw
 
 NODE_NEED_INSTALL=true
 if command -v node >/dev/null 2>&1; then
@@ -39,21 +38,10 @@ if [ "$NODE_NEED_INSTALL" = true ]; then
 fi
 
 echo -e "${GREEN}[INFO] Installing PM2...${NC}"
-npm install -g pm2 pnpm >/dev/null 2>&1 || true
-
-echo -e "${GREEN}[3/8] Installing PostgreSQL...${NC}"
-if ! command -v psql >/dev/null 2>&1; then
-  apt-get install -y postgresql postgresql-contrib
-  systemctl enable postgresql
-  systemctl start postgresql
-  echo -e "${GREEN}[OK] PostgreSQL installed and running${NC}"
-else
-  echo -e "${GREEN}[OK] PostgreSQL already installed${NC}"
-  systemctl start postgresql 2>/dev/null || true
-fi
+npm install -g pm2 >/dev/null 2>&1 || true
 
 FLUID_DIR="/opt/fluid"
-echo -e "${GREEN}[4/8] Setting up Fluid at ${FLUID_DIR}...${NC}"
+echo -e "${GREEN}[3/6] Setting up Fluid at ${FLUID_DIR}...${NC}"
 
 if [ -d "./server" ] && [ -f "./package.json" ]; then
   cp -r ./* "$FLUID_DIR/" 2>/dev/null || true
@@ -70,26 +58,17 @@ fi
 
 cd "$FLUID_DIR"
 
-echo -e "${GREEN}[5/8] Installing Node.js dependencies...${NC}"
+echo -e "${GREEN}[4/6] Installing Node.js dependencies...${NC}"
 npm install --include=dev 2>&1 | tail -3
 
-echo -e "${GREEN}[INFO] Generating Prisma client...${NC}"
-npx prisma generate 2>&1 | tail -3
-
-echo -e "${GREEN}[6/8] Configuring database...${NC}"
+echo -e "${GREEN}[INFO] Configuring database...${NC}"
 ADMIN_PASSWORD=""
-node server/setup-db.js 2>&1 | tee /tmp/fluid-setup.log || echo -e "${YELLOW}[WARN] PostgreSQL setup incomplete - run manually with: npm run setup:db${NC}"
+node server/setup-db.js 2>&1 | tee /tmp/fluid-setup.log
 ADMIN_PASSWORD=$(grep "^FLUID_ADMIN_PASSWORD=" /tmp/fluid-setup.log | tail -1 | cut -d= -f2)
 rm -f /tmp/fluid-setup.log
 
 echo -e "${GREEN}[INFO] Building frontend...${NC}"
-npm run build 2>&1 | tail -10 || {
-  echo -e "${YELLOW}[WARN] First build failed, retrying with clean install...${NC}"
-  rm -rf node_modules .next
-  npm install 2>&1 | tail -3
-  npx prisma generate 2>&1 | tail -2
-  npm run build 2>&1 | tail -5 || echo -e "${YELLOW}[WARN] Build still failing - check logs at /var/log/fluid.error.log${NC}"
-}
+npm run build 2>&1 | tail -5
 
 echo -e "${GREEN}[INFO] Configuring firewall...${NC}"
 if command -v ufw >/dev/null 2>&1; then
@@ -99,11 +78,11 @@ if command -v ufw >/dev/null 2>&1; then
   ufw allow 22/tcp >/dev/null 2>&1 || true
 fi
 
-echo -e "${GREEN}[7/8] Creating systemd service...${NC}"
+echo -e "${GREEN}[5/6] Creating systemd service...${NC}"
 cat > /etc/systemd/system/fluid.service << 'SERVICEEOF'
 [Unit]
 Description=Fluid VPS Portal
-After=network.target postgresql.target
+After=network.target
 
 [Service]
 Type=simple
@@ -123,7 +102,7 @@ SERVICEEOF
 systemctl daemon-reload
 systemctl enable fluid
 
-echo -e "${GREEN}[8/8] Starting Fluid service...${NC}"
+echo -e "${GREEN}[6/6] Starting Fluid service...${NC}"
 systemctl start fluid || {
   echo -e "${YELLOW}[WARN] Service start failed. Starting manually...${NC}"
   nohup node server/index.js > /var/log/fluid.log 2>&1 &
