@@ -99,12 +99,22 @@ async function startMongoDB() {
   try {
     await runCommand('systemctl', ['daemon-reload']);
     await runCommand('systemctl', ['enable', 'mongod']);
-    await runCommand('systemctl', ['start', 'mongod']);
     
-    // Wait for MongoDB to be ready
+    // Use restart instead of start - handles both stopped and already-running cases
+    try {
+      await runCommand('systemctl', ['restart', 'mongod']);
+    } catch {
+      // Fallback to start if restart fails
+      await runCommand('systemctl', ['stop', 'mongod']).catch(() => {});
+      await new Promise(r => setTimeout(r, 2000));
+      await runCommand('systemctl', ['start', 'mongod']);
+    }
+    
+    // Wait for MongoDB to be ready (use mongo or mongosh)
+    const mongoShell = await checkMongoShell();
     for (let i = 0; i < 30; i++) {
       try {
-        await runCommand('mongosh', ['--eval', 'db.adminCommand("ping")', '--quiet']);
+        await runCommand(mongoShell, ['--eval', 'db.adminCommand("ping")', '--quiet']);
         log('green', 'MongoDB is running');
         return;
       } catch {
@@ -115,6 +125,20 @@ async function startMongoDB() {
   } catch (err) {
     log('red', `Failed to start MongoDB: ${err.message}`);
     throw err;
+  }
+}
+
+async function checkMongoShell() {
+  try {
+    await runCommand('mongosh', ['--version']);
+    return 'mongosh';
+  } catch {
+    try {
+      await runCommand('mongo', ['--version']);
+      return 'mongo';
+    } catch {
+      return 'mongosh';
+    }
   }
 }
 
