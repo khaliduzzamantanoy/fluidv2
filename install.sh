@@ -80,11 +80,16 @@ cd "$FLUID_DIR"
 
 # Install Node dependencies
 echo -e "${GREEN}[5/7] Installing Node.js dependencies...${NC}"
-npm install --omit=dev 2>&1 | tail -1
+npm install --include=dev 2>&1 | tail -3
 
 # Build frontend
 echo -e "${GREEN}[INFO] Building frontend...${NC}"
-npm run build 2>&1 | tail -5 || echo -e "${YELLOW}[WARN] Build incomplete - will retry on first start${NC}"
+npm run build 2>&1 | tail -10 || {
+  echo -e "${YELLOW}[WARN] First build failed, retrying with clean install...${NC}"
+  rm -rf node_modules .next
+  npm install 2>&1 | tail -3
+  npm run build 2>&1 | tail -5 || echo -e "${YELLOW}[WARN] Build still failing - check logs at /var/log/fluid.error.log${NC}"
+}
 
 # Setup MongoDB database
 echo -e "${GREEN}[6/7] Configuring database...${NC}"

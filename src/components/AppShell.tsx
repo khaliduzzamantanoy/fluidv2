@@ -2,10 +2,10 @@
 
 import { useState } from 'react';
 import { 
-  BarChart3, Box, GitBranch, Globe, Activity, Settings, LogOut, 
-  LayoutDashboard, Server, Shield, Bell, Terminal, ChevronLeft, 
-  ChevronRight, Menu, X, Plus, ArrowUpRight, Clock, CheckCircle2, 
-  AlertCircle, Loader2, LucideIcon, ExternalLink, RefreshCw
+  Box, GitBranch, Globe, Activity, Settings, LogOut, 
+  LayoutDashboard, Server, Shield, Bell, ChevronLeft, 
+  ChevronRight, Menu, X, Plus, Clock, CheckCircle, 
+  AlertCircle, Loader2, RefreshCw, type LucideIcon
 } from 'lucide-react';
 
 import AuthPage from './AuthPage';
