@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Check, ShieldAlert, Cpu } from 'lucide-react';
 
 import Step1GitHubLogin from './steps/Step1GitHubLogin';
@@ -17,6 +17,8 @@ import Step10SSL from './steps/Step10SSL';
 import Step11Nginx from './steps/Step11Nginx';
 import Step12FinalSetup from './steps/Step12FinalSetup';
 import Step13Completion from './steps/Step13Completion';
+
+const WIZARD_GITHUB_TOKEN_KEY = 'fluid_wizard_github_token';
 
 export default function Wizard() {
   const [currentStep, setCurrentStep] = useState<number>(1);
@@ -37,6 +39,14 @@ export default function Wizard() {
     sslConfig: null,
     sshKey: '',
   });
+
+  useEffect(() => {
+    const saved = localStorage.getItem(WIZARD_GITHUB_TOKEN_KEY);
+    if (saved) {
+      setWizardData((prev: any) => ({ ...prev, githubToken: saved }));
+      setCurrentStep(2);
+    }
+  }, []);
 
   const stepsList = [
     'GitHub Login',
@@ -129,7 +139,10 @@ export default function Wizard() {
         <div className="w-full">
           {currentStep === 1 && (
             <Step1GitHubLogin
-              onNext={(data) => goToNext({ githubToken: data.githubToken })}
+              onNext={(data) => {
+                localStorage.setItem(WIZARD_GITHUB_TOKEN_KEY, data.githubToken);
+                goToNext({ githubToken: data.githubToken });
+              }}
             />
           )}
 
