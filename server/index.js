@@ -41,9 +41,7 @@ await fastify.register(fastifyCors, {
   origin: process.env.CORS_ORIGIN || true,
   credentials: true
 });
-await fastify.register(fastifyCookie, {
-  secret: process.env.COOKIE_SECRET || 'fluid-cookie-secret-change-me'
-});
+await fastify.register(fastifyCookie);
 await fastify.register(fastifyWebsocket);
 
 try {

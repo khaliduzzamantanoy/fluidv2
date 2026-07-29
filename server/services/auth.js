@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fluid-dev-secret-change-in-production';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
+const getJWTSecret = () => process.env.JWT_SECRET || 'fluid-dev-secret-change-in-production';
+const getJWTExpiresIn = () => process.env.JWT_EXPIRES_IN || '24h';
 
 export function generateToken(user) {
   return jwt.sign(
@@ -10,14 +10,14 @@ export function generateToken(user) {
       username: user.username,
       role: user.role
     },
-    JWT_SECRET,
-    { expiresIn: JWT_EXPIRES_IN }
+    getJWTSecret(),
+    { expiresIn: getJWTExpiresIn() }
   );
 }
 
 export function verifyToken(token) {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    return jwt.verify(token, getJWTSecret());
   } catch (err) {
     return null;
   }
@@ -47,4 +47,4 @@ export function getTokenCookieOptions() {
   };
 }
 
-export { JWT_SECRET };
+
