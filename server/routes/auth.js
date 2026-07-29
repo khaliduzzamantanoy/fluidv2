@@ -201,11 +201,12 @@ export default async function authRoutes(fastify) {
       updateData.email = email?.toLowerCase() || null;
     }
 
-    const settings = { ...(typeof request.user.settings === 'object' ? request.user.settings : {}) };
-    if (theme) settings.theme = theme;
-    if (notifications) settings.notifications = notifications;
-    if (timezone) settings.timezone = timezone;
-    updateData.settings = settings;
+    let currentSettings = {};
+    try { currentSettings = JSON.parse(request.user.settings || '{}'); } catch { currentSettings = {}; }
+    if (theme) currentSettings.theme = theme;
+    if (notifications) currentSettings.notifications = notifications;
+    if (timezone) currentSettings.timezone = timezone;
+    updateData.settings = JSON.stringify(currentSettings);
 
     const user = await prisma.user.update({
       where: { id: request.user.id },

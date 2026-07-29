@@ -138,7 +138,7 @@ async function main() {
   log('bold', '  Username: admin');
   log('bold', '  Password: hellofluid');
   log('yellow', '  ⚠ You will be prompted to change this password on first login.\n');
-  log('cyan', '  Open http://your-vps-ip:6776 to continue.\n');
+  log('cyan', '  Open http://<YOUR_VPS_IP>:6776 to continue.\n');
 
   console.log('FLUID_ADMIN_PASSWORD=hellofluid');
 }

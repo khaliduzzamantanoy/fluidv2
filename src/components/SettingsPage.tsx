@@ -12,7 +12,9 @@ export default function SettingsPage({ user, onLogout }: SettingsPageProps) {
   const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'notifications'>('profile');
   const [fullName, setFullName] = useState(user?.fullName || '');
   const [email, setEmail] = useState(user?.email || '');
-  const [theme, setTheme] = useState(user?.settings?.theme || 'dark');
+  const [theme, setTheme] = useState(() => {
+    try { return JSON.parse(user?.settings || '{}')?.theme || 'dark'; } catch { return 'dark'; }
+  });
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');

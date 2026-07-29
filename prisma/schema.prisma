@@ -20,7 +20,7 @@ model User {
   role              String    @default("owner")
   mustChangePassword Boolean   @default(false)
   lastLoginAt  DateTime?
-  settings     Json      @default("{\"theme\":\"dark\",\"notifications\":{\"deploy\":true,\"webhook\":true,\"security\":true},\"timezone\":\"UTC\"}")
+  settings     String    @default("{}")
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
